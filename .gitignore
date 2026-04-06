@@ -5,3 +5,4 @@ artifacts/
 *.d.ts
 *.js.map
 !jest.config.js
+.worktrees/

@@ -142,6 +142,11 @@ export class LLMPaymentChannel extends SmartContract {
             )
         }
 
+        // NOTE: the gateway + user outputs distribute the FULL lockAmount, so
+        // the spending tx must fund its fee from a SEPARATE input (not from
+        // channel value) and must NOT append a change output — close() commits
+        // exactly [gateway?, user?]. The caller is responsible for binding a tx
+        // builder that adds the fee input without a trailing change output.
         assert(this.ctx.hashOutputs == hash256(outputs), 'hashOutputs mismatch')
     }
 

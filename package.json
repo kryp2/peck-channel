@@ -5,7 +5,8 @@
   "scripts": {
     "build": "npx scrypt-cli compile",
     "test": "npx jest",
-    "deploy": "ts-node deploy.ts"
+    "deploy": "ts-node deploy.ts",
+    "settle": "ts-node settle-sidecar/server.ts"
   },
   "dependencies": {
     "@bsv/sdk": "^2.0.2",

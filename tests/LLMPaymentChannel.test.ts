@@ -11,9 +11,13 @@ import { LLMPaymentChannel } from '../src/contracts/LLMPaymentChannel'
 import * as path from 'path'
 import * as fs from 'fs'
 
-// Helper: generate a random BSV private key
+// Helper: generate a random BSV private key.
+// MUST be testnet: scrypt-ts DummyProvider reports testnet, and TestWallet
+// only "owns" the testnet encoding of its keys. fromRandom() defaults to
+// mainnet, so every signTransaction rejected the (mainnet) change address
+// with "does not belong to this TestWallet". Mirrors peck-bio catToken.test.
 function randomPrivateKey(): bsv.PrivateKey {
-    return bsv.PrivateKey.fromRandom()
+    return bsv.PrivateKey.fromRandom(bsv.Networks.testnet)
 }
 
 describe('LLMPaymentChannel', () => {

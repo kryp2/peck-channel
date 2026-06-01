@@ -78,10 +78,10 @@ interface ChannelReq {
     // never hold the user's private key outside testnet testing.
     userPrivWIF: string
     gatewayPrivWIF: string
-    // Optional: a separate funding UTXO (user-owned) to pay the tx fee, since
-    // drain/close distribute the full channel value. TODO(testnet): the gateway
-    // selects this from a faucet/funding wallet.
-    feeUtxo?: { txId: string; outputIndex: number; satoshis: number; script: string }
+    // FIX A: close()/timeout() take the fee FROM the channel value (no separate
+    // fee input / change), so the gateway just supplies the fee amount. ~100
+    // sat/kb on a ~6.3KB close tx ≈ 700 sats (proven on mainnet, tx dfc39a8a…).
+    fee?: number
 }
 
 function reconstruct(req: ChannelReq): {
@@ -156,12 +156,16 @@ async function buildClose(req: ChannelReq): Promise<string> {
     const { instance, signer, userPriv, gatewayPriv } = reconstruct(req)
     await instance.connect(signer)
 
+    // FIX A (PROVEN on mainnet, close tx dfc39a8a…): the close fee is taken FROM
+    // the channel value, so the spending tx has a SINGLE input (the contract UTXO)
+    // and ONLY the [gateway?, user?] outputs — NO separate fee input, NO change.
+    // A wallet-authored close (createAction) appends a change output that breaks
+    // close()'s SIGHASH_ALL hashOutputs commitment (verified live), so the GATEWAY
+    // builds the close instead; the wallet only contributes the user signature.
+    const fee = req.fee ?? 0
     const gatewayAmount = req.amountSpent
-    const userAmount = req.lockAmount - req.amountSpent
+    const userAmount = req.lockAmount - req.amountSpent - fee
 
-    // SIGHASH_ALL → the spending tx must commit EXACTLY [gateway?, user?] with no
-    // change output. Bind a builder producing that set; the fee comes from a
-    // SEPARATE funding input. (Validated against the contract's hashOutputs.)
     instance.bindTxBuilder(
         'close',
         async (current: LLMPaymentChannel): Promise<ContractTransaction> => {
@@ -182,14 +186,17 @@ async function buildClose(req: ChannelReq): Promise<string> {
                     })
                 )
             }
-            // TODO(testnet): add req.feeUtxo as a separate input + declare the fee
-            // so the full lockAmount distributes with no change output.
+            // Implicit fee == input(value) - sum(outputs) == fee. No change output.
             return { tx, atInputIndex: 0, nexts: [] }
         }
     )
 
+    // TODO(prod): the userSig must come from the client's BRC-100 wallet
+    // (createSignature over the close preimage with its BRC-42 refund-child key) —
+    // the sidecar must never hold the user's private key outside testing.
     const { tx } = await instance.methods.close(
         (sigResps: SignatureResponse[]) => findSig(sigResps, userPriv.publicKey),
+        BigInt(fee),
         {
             pubKeyOrAddrToSign: [userPriv.publicKey],
             autoPayFee: false,
@@ -202,6 +209,9 @@ async function buildTimeout(req: ChannelReq): Promise<string> {
     const { instance, signer, userPriv } = reconstruct(req)
     await instance.connect(signer)
 
+    // FIX A: timeout fee also taken from channel value — single input, one user
+    // output, no change (mirrors close()).
+    const fee = req.fee ?? 0
     instance.bindTxBuilder(
         'timeout',
         async (current: LLMPaymentChannel): Promise<ContractTransaction> => {
@@ -210,7 +220,7 @@ async function buildTimeout(req: ChannelReq): Promise<string> {
                 .addOutput(
                     new bsv.Transaction.Output({
                         script: p2pkh(userPriv),
-                        satoshis: req.lockAmount,
+                        satoshis: req.lockAmount - fee,
                     })
                 )
             // nLockTime must be >= expiryTime; the contract input sequence must be
@@ -223,6 +233,7 @@ async function buildTimeout(req: ChannelReq): Promise<string> {
 
     const { tx } = await instance.methods.timeout(
         (sigResps: SignatureResponse[]) => findSig(sigResps, userPriv.publicKey),
+        BigInt(fee),
         {
             pubKeyOrAddrToSign: [userPriv.publicKey],
             autoPayFee: false,

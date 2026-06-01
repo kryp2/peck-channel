@@ -1,17 +1,15 @@
 # IN_FLIGHT — llm-payment-channel
-_Sist oppdatert: 2026-05-30_
+_Sist oppdatert: 2026-06-01_
 
 ## Sist gjort
-- **Test-harness FIKSET + verifisert (9/10 grønt med egne øyne).** Rotårsak til at alle 10 testene feilet («address does not belong to this TestWallet»): nettverks-mismatch — scrypt-ts DummyProvider rapporterer testnet, men `bsv.PrivateKey.fromRandom()` defaulter til mainnet, så TestWallet eide aldri mainnet-adressene. Fix: `fromRandom(bsv.Networks.testnet)` i `tests/LLMPaymentChannel.test.ts:15-17` (speiler peck-bio catToken.test.ts). KUN den endringen trengtes — `changeAddress`-tillegg var unødvendig. Diff = 6 linjer.
-  - Verifisert lokalt: `npx jest` → `Tests: 1 failed, 9 passed, 10 total`, 0 «does not belong», ekte TX-id-er logget.
-  - **NB:** Jeg utstedte commit-kommandoen men shell-en sluttet å svare før jeg fikk bekreftet at den landet. **SJEKK: `git -C llm-payment-channel log -1` — hvis testnet-fixen IKKE er committet, commit den** (melding: "test(channel): use testnet keys so harness network matches DummyProvider").
+- **FIX A BEVIST ON-CHAIN (mainnet).** Hele løkka: (1) deploy via BRC-100-wallet `createAction` → tx `d36a9071`; (2) close bygget av gateway (kontrakt-input + `[user]`, fee fra verdi, ingen change) + broadcast via GorillaPool ARC → tx `dfc39a8a`, `SEEN_ON_NETWORK`. close() sin SIGHASH_ALL-assert passerte live.
+- **Empirisk arkitektur-svar:** wallet-`createAction` legger ALLTID til funding-input + change-output (verifisert: close-inspect ga 2 inputs/3 outputs) → en wallet-AUTHORED close bryter FIX A. Derfor: **gateway bygger close, walleten authorer den ikke** — walleten gir kun brukerens signatur. Non-custodial + BRC-100-native intakt.
+- `settle-sidecar/server.ts` `buildClose`/`buildTimeout` oppdatert til FIX-A-ABI (fee-param, fee-fra-verdi, ingen feeUtxo/change). `derive.ts` = BRC-42 nøkkel-lag. **14/14 jest grønt** (10 kontrakt + 4 derive).
 
-## close() — REKLASSIFISERT: test-harness-gap, IKKE kontrakt-bug (2026-05-30)
-- Jeg PRØVDE kontrakt-side fix (`buildChangeOutput()`) — den gjorde det VERRE (2 røde, brakk close-zero-spent). Revertet. Det LÆRTE oss svaret: `close()` er KORREKT designet.
-- `close()` fordeler full lockAmount til [gateway, user] og asserter hashOutputs over nøyaktig de to. Fee MÅ komme fra en SEPARAT input, og tx MÅ IKKE ha change-output. Dette er riktig (samme som FetchPaymentChannel). Bytecode uendret; la til en doc-kommentar (commit `ae11ecb`).
-- Det ene røde (close-split) feiler KUN fordi default scrypt-ts-builder legger på en change-output. Fix = custom `bindTxBuilder('close', ...)` med fee-input uten change (speil CatToken burn() catToken.test.ts:440-450). Test-side, lav prioritet.
-- **drain() / timeout() / sig-validering: alle grønne (9/10).** Kontrakt-logikken er verifisert sunn — klar for ChainDrain-bygging. close-LOGIKKEN er også korrekt, bare ikke eksersert av default-builderen.
+## Neste
+- **Prod-gap:** brukerens close-sig fra BRC-100-walleten (`createSignature` over close-preimage med BRC-42 refund-child) i stedet for lokal WIF i sidecar. Spiken brukte lokal user-key.
+- Mirror FIX A + nøkkel-lag til FetchPaymentChannel (peck-overlay-schema paywall — stubbet /close + /timeout).
+- Wire sidecar ↔ gateway (Go broadcaster.Arc) for `ENFORCE_PAYMENT`-tier.
 
 ## Kontekst
-- Del av peck.run drain-stack. Se `../PECK_RUN_DRAIN_ECONOMICS_2026-05-30.md` (instans-sekund-modell) + `../PECK_RUN_CHANNEL_CONTRACT_2026-05-30.md`. Kontrakt-valg = sCrypt (ikke Runar). Memory: [[peck-run-drain-economics-2026-05-30]].
-- Når close()-bug er fikset + 10/10 grønt: da kan ekte ChainDrain bygges i peck-host (drain.go er mock).
+- Del av llm-gateway 402-laget OG peck.run drain-stack. Proven flow ligger som referanse i `settle-sidecar/spike-close-broadcast.ts` (lokal, ucommittet).

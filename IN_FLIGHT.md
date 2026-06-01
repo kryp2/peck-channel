@@ -6,9 +6,13 @@ _Sist oppdatert: 2026-06-01_
 - **Empirisk arkitektur-svar:** wallet-`createAction` legger ALLTID til funding-input + change-output (verifisert: close-inspect ga 2 inputs/3 outputs) → en wallet-AUTHORED close bryter FIX A. Derfor: **gateway bygger close, walleten authorer den ikke** — walleten gir kun brukerens signatur. Non-custodial + BRC-100-native intakt.
 - `settle-sidecar/server.ts` `buildClose`/`buildTimeout` oppdatert til FIX-A-ABI (fee-param, fee-fra-verdi, ingen feeUtxo/change). `derive.ts` = BRC-42 nøkkel-lag. **14/14 jest grønt** (10 kontrakt + 4 derive).
 
+## Prod-gap LUKKET (2026-06-01) — non-custodial wallet-signed close bevist on-chain
+- userPubKey = BRC-42-derivert child (`getPublicKey{counterparty:'self',forSelf:true}`). Bruker funder via createAction → deploy `cfe76859`. Gateway bygger FIX-A close. **Bruker signerer sighash i egen wallet via `createSignature{hashToDirectlySign}`** (privatnøkkel forlater aldri walleten) → lokal ECDSA-verify → close `628ac044` `SEEN_ON_NETWORK`, close()-assert passerte med wallet-sig. Kanonisk referanse: `settle-sidecar/reference-walletsig-close.ts`.
+- Teknisk nøkkel: `hashToDirectlySign` = sighash (hash256 av BIP143-preimage via scryptlib `getPreimage`) → verifiserer rett mot `checkSig`. Sig injiseres via `getUnlockingScript`.
+
 ## Neste
-- **Prod-gap:** brukerens close-sig fra BRC-100-walleten (`createSignature` over close-preimage med BRC-42 refund-child) i stedet for lokal WIF i sidecar. Spiken brukte lokal user-key.
-- Mirror FIX A + nøkkel-lag til FetchPaymentChannel (peck-overlay-schema paywall — stubbet /close + /timeout).
+- Produksjonalisér: sidecar (`server.ts`) tar klient-wallet-sig i stedet for `userPrivWIF` (close-endpoint mottar sighash→sig fra klient, ikke nøkkel). Gateway orkestrerer deploy/sighash/inject/broadcast.
+- Mirror FIX A + nøkkel-lag + wallet-sig til FetchPaymentChannel (peck-overlay-schema paywall — stubbet /close + /timeout).
 - Wire sidecar ↔ gateway (Go broadcaster.Arc) for `ENFORCE_PAYMENT`-tier.
 
 ## Kontekst

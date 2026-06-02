@@ -41,8 +41,15 @@ _Sist oppdatert: 2026-06-01_
 - 2 BUGS fanget + fikset: (1) `VerifyDrainTx`/`sharesContractPrefix` krevde eksakt script-lengde — feil fordi sCrypt-ints er VARIABEL-bredde (amountSpent=200=0xC8 trenger 0x00-padding=2 bytes vs 50=1 byte). Fikset til min-lengde-prefix-sammenligning. (2) close fee=300 < ARC-min 633 → bump til 700, LOCK 1000.
 - Zero-conf-kjeding BEKREFTET: close spender ubekreftet drain-output, ARC godtok (ingen parent-not-found).
 
+## 2026-06-02 (forts.) — METER-DRIVEN SETTLEMENT BEVIST ON-CHAIN ✅
+- `npm run meter-settle-e2e`: ekte per-sekund-meter akkumulerte 40→80→120→140 sat headless (ingen prompts), så settle via drain+close. deploy `e3168912…` / drain `f86cb7df…` (amountSpent=140) / close `aa3ee1e5…` (ARC 200, gateway 140 + user 160 + fee 700).
+- peck-host: StartMeter/StopMeter (DEV-gated) kjører den eksisterende Meter på bar kanal. FIX: meteren biller instance-seconds i non-mock (0 for bar kanal → 0 akkumulering); la til Meter.StartWallClock + ServiceMeter.ForceWallClock så DEV-meteren biller wall-clock.
+- "Produktet gjør det selv": meter accruer fritt, bruker signerer kun ved settle. Symmetrisk med llm.peck.to receipt→close — de to consumerne nå symmetriske.
+
 ## Neste
-- La peck.run-meteren drive drain/close mot pre-autorisert receipt-tak (samme BRC-77-mønster som llm-gateway) — symmetri mellom de to consumerne.
+- (valgfritt) receipt-pre-auth-tak så akkumulering er bundet til user-autorisasjon (llm-gateway har BRC-77-mønsteret).
+- timeout()-produktisering (user safety valve, kan ikke bevises uten expiry).
+- dedupe llm-gateway internal/payment mot spec; mirror FIX A til FetchPaymentChannel.
 - Senere: timeout() produktisering (user safety valve); dedupe llm-gateway internal/payment mot spec; mirror FIX A til FetchPaymentChannel.
 - Drain→close lifecycle: peck-host sporer ikke post-drain outpoint (kanal-UTXO flytter per drain) — må fikses for close-etter-drain (gateway-output-grenen).
 - La peck.run-meteren drive drain/close automatisk (uten accrue-hook) mot et pre-autorisert receipt-tak.

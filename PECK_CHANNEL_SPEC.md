@@ -65,7 +65,7 @@ Disse rutene definerer peck.channel-gatewayen. peck-host implementerer dem (`api
 | `POST /channels/submit-drain` | klient→gateway | Klient poster ferdig drain-tx (kontrakt-input bruker-signert). Gateway `VerifyDrainTx` + **signerer fee-input[1]** + `SettleDrain` broadcaster via ARC. |
 | `POST /channels/close` | klient→gateway | **(impl.)** Gateway returnerer autoritativ `amountSpent` + params; klienten bygger FIX-A close (`buildCloseSpend`), bruker signerer SIGHASH_ALL i wallet. Ingen gateway-cosign (close trenger kun userSig). |
 | `POST /channels/submit-close` | klient→gateway | **(impl.)** Klient poster ferdig close-tx; gateway `VerifyCloseTx` (split = `[gateway←amountSpent, user←lockAmount−amountSpent−fee]`) + broadcast via ARC + avslutter kanalen. |
-| `POST /channels/timeout` | klient→gateway | Etter expiry: bruker reclaimer hele lockAmount. (Ikke produktisert ennå — samme mønster som close.) |
+| (ingen gateway-rute) | klient→ARC | **(impl.)** `timeout()` er GATEWAY-UAVHENGIG: etter expiry bygger klienten reclaim-tx-en (`buildTimeoutSpend`, nLockTime=expiry), bruker signerer, og broadcaster RETT til ARC. Ingen gateway — det er hele poenget med sikkerhetsventilen. Bevist: `6d5b83ab…`. |
 
 Broadcast går ALLTID via ARC (`arc.gorillapool.io`), aldri WoC i loop.
 

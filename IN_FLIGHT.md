@@ -46,9 +46,14 @@ _Sist oppdatert: 2026-06-01_
 - peck-host: StartMeter/StopMeter (DEV-gated) kjører den eksisterende Meter på bar kanal. FIX: meteren biller instance-seconds i non-mock (0 for bar kanal → 0 akkumulering); la til Meter.StartWallClock + ServiceMeter.ForceWallClock så DEV-meteren biller wall-clock.
 - "Produktet gjør det selv": meter accruer fritt, bruker signerer kun ved settle. Symmetrisk med llm.peck.to receipt→close — de to consumerne nå symmetriske.
 
-## Neste
-- (valgfritt) receipt-pre-auth-tak så akkumulering er bundet til user-autorisasjon (llm-gateway har BRC-77-mønsteret).
-- timeout()-produktisering (user safety valve, kan ikke bevises uten expiry).
+## 2026-06-02 (forts.) — timeout() BEVIST ON-CHAIN ✅ (alle 4 ops komplett)
+- `npm run timeout-e2e`: deploy `ee4a6db0…` (expiry i fortid) / timeout `6d5b83ab…` (ARC 200, SEEN_ON_NETWORK). Bruker reclaimet 300 sat RETT TIL ARC — ingen gateway. Sikkerhetsventilen bevist gateway-uavhengig.
+- lib: buildTimeoutSpend (nLockTime=expiry, non-final sequence) + assembleTimeoutUnlock. Standalone driver (ingen peck-host). buildCloseSpend-mønster, men 1 user-output + locktime.
+- ALLE kontrakt-ops nå bevist on-chain: drain, close, full lifecycle, meter-driven settle, timeout.
+
+## Neste (når du vil — primitivet er komplett)
+- (valgfritt) receipt-pre-auth-tak (bind akkumulering til user-autorisasjon, llm-gateway har BRC-77).
+- Koble inn i peck.website (vibekodet side → deploy på peck.run m/ live metering).
 - dedupe llm-gateway internal/payment mot spec; mirror FIX A til FetchPaymentChannel.
 - Senere: timeout() produktisering (user safety valve); dedupe llm-gateway internal/payment mot spec; mirror FIX A til FetchPaymentChannel.
 - Drain→close lifecycle: peck-host sporer ikke post-drain outpoint (kanal-UTXO flytter per drain) — må fikses for close-etter-drain (gateway-output-grenen).

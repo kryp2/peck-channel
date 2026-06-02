@@ -1,12 +1,15 @@
 {
-  "name": "llm-payment-channel",
+  "name": "peck-channel",
   "version": "0.1.0",
-  "description": "sCrypt payment channel smart contract for LLM Gateway micropayments",
+  "description": "Canonical BSV payment-channel primitive — sCrypt contract + non-custodial client lib + spec. Consumers: peck.run, llm.peck.to, peck.fm.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "scripts": {
     "build": "npx scrypt-cli compile",
     "test": "npx jest",
     "deploy": "ts-node deploy.ts",
-    "settle": "ts-node settle-sidecar/server.ts"
+    "settle": "ts-node settle-sidecar/server.ts",
+    "drain-e2e": "ts-node settle-sidecar/e2e-gopath-drain.ts"
   },
   "dependencies": {
     "@bsv/sdk": "^2.0.2",

@@ -17,8 +17,15 @@ _Sist oppdatert: 2026-06-01_
 - **BEVIST MAINNET:** deploy `97fd93be…7293` / drain `569ddd1b…423f` (ARC 200). Wallet signerte kun bruker-sighash; gateway co-signet+fee-signet server-side. Non-custodial drain gjennom peck.run Go-HTTP-stien.
 - LÆRDOM: go-bt `GetInputSignatureHash` er reversert; må signere `bt.ReverseBytes(sh)` for fee-input (ellers ARC 461 NULLFAIL). Fanget på 2. on-chain-forsøk.
 
-## Neste (etter live-proof)
-- Seed `peck-channel`-pakke rundt bevist sti (contract+spec+TS-klient+Go-lib); dedupe llm-gateway `internal/payment/*`.
+## 2026-06-02 (forts.) — peck-channel-pakke seedet (seam-først)
+- Repurposet til `peck-channel` (package.json name). Klientlib i `src/client/`: `PeckChannelGateway` (HTTP) + `deployChannel`/`buildDrainSpend`/`walletSignSighash`/`assembleDrainUnlock` (byte-identisk m/ bevist sti). `src/index.ts` barrel. Typecheck rent.
+- `e2e-gopath-drain.ts` rewiret til å konsumere lib-en → conformance-test (`npm run drain-e2e`). README + spec oppdatert.
+- IKKE rørt: llm-gateway (eget provider-arbeid), peck-contracts, FetchPaymentChannel. Go-gateway-lib = peck-host/billing forblir referansen (Go-consumers avhenger av SPEC, ikke npm-pakka).
+
+## Neste
+- Re-validér lib-en on-chain ved neste wallet-økt (kjør `npm run drain-e2e` — beviser kjede + lib i ett).
+- La peck.run-meteren drive drainen automatisk (uten accrue-hook) — fra "test-driver" til "produktet gjør det selv".
+- Senere: dedupe llm-gateway `internal/payment/*` mot SPEC; mirror FIX A til FetchPaymentChannel (peck-overlay-schema paywall).
 - Produksjonalisér sidecar `server.ts`: klient-wallet-sig i stedet for `userPrivWIF`.
 - Mirror FIX A + nøkkel-lag + wallet-sig til FetchPaymentChannel (peck-overlay-schema paywall — stubbet /close + /timeout).
 - Wire sidecar ↔ gateway for `ENFORCE_PAYMENT`-tier på llm.peck.to.

@@ -1,218 +1,148 @@
 /**
  * E2E — DRAIN through the peck-host Go HTTP path, on-chain (mainnet).
  *
- * Unlike reference-walletsig-drain.ts (which builds everything in TS), this proves
- * the GO PRODUCTION PLUMBING end-to-end:
+ * This is BOTH the on-chain proof AND the conformance test for the peck-channel
+ * client lib (src/client): it drives the whole non-custodial flow through the
+ * library, so a green run validates the lib end-to-end.
  *
- *   1. [TS] deploy the LLMPaymentChannel via wallet createAction        [PROMPT #1]
- *   2. [HTTP→Go] POST /api/channels/open  — register the channel + script_hex so
- *      peck-host can provision ChannelOnChainState (BuildDrainSpend needs it)
- *   3. [HTTP→Go] POST /api/channels/drain (RequestDrain) — the GATEWAY builds the
- *      drain spend, co-signs the ANYONECANPAY_SINGLE sighash with PECKHOST_PRIVKEY,
- *      and returns {gateway_sig, sighash, amount, nonce, ...}
- *   4. [TS] rebuild the REAL next-state output (instance.next(), amountSpent/nonce
- *      advanced), re-derive the sighash
- *   5. [HTTP→Go] POST /api/channels/cosign-drain — gateway re-signs the client's
- *      REAL digest with PECKHOST_PRIVKEY (the placeholder sighash from RequestDrain
- *      no longer matches the rebuilt next-state output)
- *   6. [TS] get the user's wallet signature over the sighash, assemble the drain()
- *      unlock (user + gateway sigs), leave the fee input UNSIGNED          [PROMPT #2]
- *   7. [HTTP→Go] POST /api/channels/submit-drain — peck-host gateway-signs the fee
- *      input, VerifyDrainTx, SettleDrain broadcasts via ARC and advances state.
+ *   1. [lib] deployChannel — wallet createAction mints contract + fee-fund   [PROMPT #1]
+ *   2. [gateway] open — register channel + fee UTXO so peck-host can provision state
+ *   3. [gateway] (DEV) accrue-drain — set PendingDrain (the meter does this in prod)
+ *   4. [gateway] requestDrain — get pending amount/nonce
+ *   5. [lib] buildDrainSpend — rebuild the REAL next-state tx + sighash
+ *   6. [gateway] cosignDrain — gateway re-signs the client's real digest server-side
+ *   7. [lib] walletSignSighash — user signs in-wallet                        [PROMPT #2]
+ *   8. [lib] assembleDrainUnlock — drain() unlock (user+gateway sigs); fee input UNSIGNED
+ *   9. [gateway] submitDrain — peck-host fee-signs input[1], verifies, broadcasts via ARC
  *
- * NON-CUSTODIAL: the client never holds a gateway key. PECKHOST_FEE_WIF is gone —
- * the gateway co-signs (cosign-drain) and fee-signs (submit-drain) server-side.
+ * NON-CUSTODIAL: the client never holds a gateway key. The gateway co-signs
+ * (cosign-drain) and fee-signs (submit-drain) server-side.
  *
  * PRE-REQ: peck-host running locally in NON-mock with a funded gateway key:
  *   cd peck-host && PECKHOST_PRIVKEY=<wif> PECKHOST_PUBKEY=<hex> \
- *     ARC_URL=https://arc.gorillapool.io/v1/tx PORT=8080 go run ./cmd/main.go
+ *     ARC_URL=https://arc.gorillapool.io/v1/tx PECKHOST_ALLOW_ACCRUE=1 \
+ *     PORT=8080 go run ./cmd/main.go
  * (MOCK_MODE unset → real ARC broadcast.) Set PECK_HOST_URL if not :8080.
- *
- * Sighash parity (go-bt == scryptlib) is already proven (sighash-parity-check.ts),
- * so a mismatch here is operational (wiring/state), not cryptographic.
+ * Run the driver with PECKHOST_PUBKEY set to the SAME key. See RUNBOOK_DRAIN_E2E.md.
  */
-import { bsv, PubKey, Sig } from 'scrypt-ts'
-import { getPreimage } from 'scryptlib'
-import { WalletClient, Transaction as SdkTx } from '@bsv/sdk'
-import { LLMPaymentChannel } from '../src/contracts/LLMPaymentChannel'
-import * as fs from 'fs'
-import * as path from 'path'
+import { WalletClient } from '@bsv/sdk'
+import {
+  PeckChannelGateway,
+  loadContractArtifact,
+  deployChannel,
+  buildDrainSpend,
+  walletSignSighash,
+  assembleDrainUnlock,
+} from '../src/client'
 
-const NET = bsv.Networks.mainnet
-const PROTOCOL: [number, string] = [2, 'peck channel']
-const KEYID = 'e2e-gopath-1'
-const ACP_SINGLE_FORKID =
-  bsv.crypto.Signature.SIGHASH_ANYONECANPAY |
-  bsv.crypto.Signature.SIGHASH_SINGLE |
-  bsv.crypto.Signature.SIGHASH_FORKID
 const HOST = process.env.PECK_HOST_URL || 'http://localhost:8080'
+const KEYID = 'e2e-gopath-1'
 const LOCK = 600
 const DRAIN = 50
 const FEEFUND = 1400
 const DRAIN_FEE = 1300
 
-async function api(pathName: string, body: any, authPubKey: string) {
-  const res = await fetch(HOST + pathName, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authPubKey },
-    body: JSON.stringify(body),
-  })
-  const text = await res.text()
-  let json: any = null
-  try { json = JSON.parse(text) } catch { /* keep text */ }
-  return { ok: res.ok, status: res.status, json, text }
-}
-
 async function main() {
+  const gatewayPubHex = process.env.PECKHOST_PUBKEY
+  if (!gatewayPubHex)
+    throw new Error('set PECKHOST_PUBKEY (same as the running peck-host) so the contract binds the right gateway key')
+  console.log('gatewayPubKey (from PECKHOST_PUBKEY):', gatewayPubHex)
+
+  const gw = new PeckChannelGateway(HOST)
   // peck-host reachable?
   try {
-    const h = await fetch(HOST + '/health')
-    console.log('peck-host /health:', h.status, (await h.text()).slice(0, 120))
+    const h = await gw.health()
+    console.log('peck-host /health:', h.status, h.body.slice(0, 120))
   } catch (e: any) {
     throw new Error('peck-host not reachable at ' + HOST + ' — start it first (see header). ' + e.message)
   }
 
-  LLMPaymentChannel.loadArtifact(
-    JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'artifacts', 'contracts', 'LLMPaymentChannel.json'), 'utf8'))
-  )
+  loadContractArtifact()
   const w = new WalletClient('auto', 'peck-run-e2e.peck.to')
-
-  const userPubKey = (await w.getPublicKey({ protocolID: PROTOCOL as any, keyID: KEYID, counterparty: 'self', forSelf: true })).publicKey
-  console.log('userPubKey (BRC-42 child):', userPubKey)
-
-  // The gateway pubkey peck-host co-signs with = PECKHOST_PUBKEY. We must use the
-  // SAME pubkey in the contract or drain()'s checkSig(gatewaySig) fails. Read it
-  // from the env the local server was started with.
-  const gatewayPubHex = process.env.PECKHOST_PUBKEY
-  if (!gatewayPubHex) throw new Error('set PECKHOST_PUBKEY (same as the running peck-host) so the contract binds the right gateway key')
-  console.log('gatewayPubKey (from PECKHOST_PUBKEY):', gatewayPubHex)
-
-  const expiry = BigInt(Math.floor(Date.now() / 1000) + 3600)
-  const instance = new LLMPaymentChannel(PubKey(userPubKey), PubKey(gatewayPubHex), BigInt(LOCK), expiry)
-  const lockingScript = instance.lockingScript
-  const gatewayP2PKH = bsv.Script.buildPublicKeyHashOut(bsv.Address.fromPublicKey(bsv.PublicKey.fromString(gatewayPubHex), NET))
 
   // ── PROMPT #1: deploy channel + gateway fee-fund UTXO ──
   console.log('\n>>> PROMPT #1: approve the channel deposit in your wallet...')
-  const dep = await w.createAction({
+  const channel = await deployChannel({
+    wallet: w,
+    gatewayPubHex,
+    lockAmount: LOCK,
+    feeFund: FEEFUND,
+    keyId: KEYID,
     description: 'Deploy LLM channel (Go-path E2E)',
-    outputs: [
-      { lockingScript: lockingScript.toHex(), satoshis: LOCK, outputDescription: 'channel deposit' },
-      { lockingScript: gatewayP2PKH.toHex(), satoshis: FEEFUND, outputDescription: 'drain fee fund' },
-    ],
-    options: { acceptDelayedBroadcast: false, randomizeOutputs: false },
   })
-  console.log('deploy txid:', dep.txid)
-  const deployTx = new bsv.Transaction(SdkTx.fromAtomicBEEF(dep.tx as number[]).toHex())
-  const feeVout = deployTx.outputs.findIndex((o: any) => o.script.toHex() === gatewayP2PKH.toHex())
+  console.log('userPubKey (BRC-42 child):', channel.userPubKey)
+  console.log('deploy txid:', channel.channelTxid)
+  gw.setAuthPubKey(channel.userPubKey)
 
-  // ── Step 2: register the channel with peck-host so it provisions state ──
-  const open = await api('/api/channels/open', {
-    channel_txid: dep.txid,
+  // ── Step 2: register the channel + fee UTXO with peck-host ──
+  const open = await gw.open({
+    channel_txid: channel.channelTxid,
     amount: LOCK,
-    script_hex: lockingScript.toHex(),
+    script_hex: channel.lockingScript.toHex(),
     satoshi_value: LOCK,
     vout: 0,
-    user_pubkey: userPubKey,
-    expiry_time: Number(expiry),
-    // Register the gateway fee-fund UTXO so /submit-drain can gateway-sign the fee
-    // input itself — the client never needs PECKHOST_FEE_WIF (non-custodial).
-    fee_txid: dep.txid,
-    fee_vout: feeVout,
+    user_pubkey: channel.userPubKey,
+    expiry_time: Number(channel.expiry),
+    fee_txid: channel.channelTxid,
+    fee_vout: channel.feeVout,
     fee_satoshi_value: FEEFUND,
-  }, userPubKey)
+  })
   console.log('open:', open.status, JSON.stringify(open.json || open.text).slice(0, 200))
   if (!open.ok) throw new Error('open failed')
 
-  // ── Step 2b: accrue PendingDrain via the DEV hook (meter not running in a proof).
-  // Requires peck-host started with PECKHOST_ALLOW_ACCRUE=1.
-  const accrue = await api('/api/channels/accrue-drain', { channel_txid: dep.txid, amount_sats: DRAIN }, userPubKey)
+  // ── Step 2b: accrue PendingDrain via the DEV hook (meter not running in a proof) ──
+  const accrue = await gw.accrueDrain(channel.channelTxid, DRAIN)
   console.log('accrue-drain:', accrue.status, JSON.stringify(accrue.json || accrue.text).slice(0, 160))
-  if (!accrue.ok) throw new Error('accrue-drain failed (start peck-host with PECKHOST_ALLOW_ACCRUE=1): ' + (accrue.json?.error || accrue.text))
+  if (!accrue.ok)
+    throw new Error(
+      'accrue-drain failed (start peck-host with PECKHOST_ALLOW_ACCRUE=1): ' +
+        (accrue.json?.error || accrue.text)
+    )
 
-  // ── Step 3: RequestDrain — gateway builds spend + co-signs sighash ──
-  const reqDrain = await api('/api/channels/drain', { channel_txid: dep.txid }, userPubKey)
+  // ── Step 3: requestDrain — gateway returns pending amount/nonce ──
+  const reqDrain = await gw.requestDrain(channel.channelTxid)
   console.log('request-drain:', reqDrain.status, JSON.stringify(reqDrain.json || reqDrain.text).slice(0, 300))
-  const rd = reqDrain.json || {}
+  const rd = reqDrain.json || ({} as any)
   if (!reqDrain.ok) throw new Error('request-drain failed: ' + (rd.error || reqDrain.text))
   if (!rd.drain_amount || rd.drain_amount === 0) {
     console.log('\n⚠️ RequestDrain returned drain_amount=0 — no PendingDrain accrued.')
-    console.log('   The meter normally sets PendingDrain per request; it is not running in this proof.')
-    console.log('   WIRING GAP: need a way to accrue a pending drain (meter RecordDrain or a test hook).')
-    console.log('   Deploy ' + dep.txid + ' is reclaimable via timeout. Stopping before any bad spend.')
+    console.log('   Deploy ' + channel.channelTxid + ' is reclaimable via timeout. Stopping before any bad spend.')
     return
   }
 
   const amount = Number(rd.drain_amount)
   const nonce = Number(rd.nonce)
-  console.log(`gateway RequestDrain returned amount=${amount} nonce=${nonce} (its sig is over a placeholder sighash; re-signed below)`)
+  console.log(`gateway requestDrain returned amount=${amount} nonce=${nonce}`)
 
-  // ── Step 4: rebuild the REAL next-state output + re-derive sighash ──
-  instance.from = { tx: deployTx, outputIndex: 0 } as any
-  const next = instance.next()
-  next.amountSpent = BigInt(amount)
-  next.paymentNonce = BigInt(nonce + 1)
-  const nextScript = next.lockingScript
-
-  const drainTx = new bsv.Transaction()
-    .addInput(instance.buildContractInput())
-    .addOutput(new bsv.Transaction.Output({ script: nextScript, satoshis: LOCK }))
-    .addInput(new bsv.Transaction.Input({
-      prevTxId: deployTx.id, outputIndex: feeVout, script: bsv.Script.empty(), output: deployTx.outputs[feeVout],
-    }))
-    .addOutput(new bsv.Transaction.Output({ script: gatewayP2PKH, satoshis: FEEFUND - DRAIN_FEE }))
-
-  const preimageHex = getPreimage(drainTx, lockingScript, LOCK, 0, ACP_SINGLE_FORKID)
-  const sighash = bsv.crypto.Hash.sha256sha256(Buffer.from(preimageHex, 'hex'))
+  // ── Step 4: rebuild the REAL next-state spend + sighash (lib) ──
+  const { drainTx, sighash } = buildDrainSpend(channel, amount, nonce, DRAIN_FEE)
   console.log('client-rebuilt sighash:', sighash.toString('hex'))
 
-  // ── Gateway RE-CO-SIGN over the CLIENT-rebuilt sighash (PRODUCTION path) ──
-  // RequestDrain co-signed over a sighash computed with the CURRENT script as a
-  // placeholder state output (BuildDrainSpend can't run scryptlib to produce the
-  // real next-state script). The client just rebuilt the output with the REAL
-  // next-state script → a DIFFERENT sighash, so the gateway sig from RequestDrain
-  // no longer matches. The non-custodial fix: POST the real digest to
-  // /api/channels/cosign-drain and let the gateway re-sign it with PECKHOST_PRIVKEY
-  // server-side. No gateway key (PECKHOST_FEE_WIF) is ever held client-side.
-  const cosign = await api('/api/channels/cosign-drain',
-    { channel_txid: dep.txid, sighash_hex: sighash.toString('hex') }, userPubKey)
+  // ── Step 5: gateway co-signs the client's real digest (production path) ──
+  const cosign = await gw.cosignDrain(channel.channelTxid, sighash.toString('hex'))
   if (!cosign.ok || !cosign.json?.gateway_sig) {
     throw new Error('cosign-drain failed: ' + (cosign.json?.error || cosign.text))
   }
-  const gwSigHex = cosign.json.gateway_sig as string
+  const gwSigHex = cosign.json.gateway_sig
   console.log('✅ gateway co-signed client sighash via /api/channels/cosign-drain')
 
-  // ── PROMPT #2: user signs the sighash ──
+  // ── PROMPT #2: user signs the sighash in-wallet (lib verifies locally) ──
   console.log('\n>>> PROMPT #2: approve the drain signature in your wallet...')
-  const { signature: userSigBytes } = await w.createSignature({
-    hashToDirectlySign: Array.from(sighash), protocolID: PROTOCOL as any, keyID: KEYID, counterparty: 'self',
-  })
-
-  // verify user sig locally
-  const userOk = bsv.crypto.ECDSA.verify(sighash, bsv.crypto.Signature.fromDER(Buffer.from(userSigBytes)), bsv.PublicKey.fromString(userPubKey))
-  if (!userOk) throw new Error('user sig does not verify locally — aborting (timeout-reclaimable)')
+  const userSigHex = await walletSignSighash(w, sighash, channel.userPubKey, { keyId: KEYID })
   console.log('✅ user sig verifies locally')
 
-  const userSigHex = Buffer.from(userSigBytes).toString('hex') + ACP_SINGLE_FORKID.toString(16).padStart(2, '0')
+  // ── Step 6: assemble the drain() unlock; fee input[1] left UNSIGNED for the gateway ──
+  await assembleDrainUnlock(channel.instance, drainTx, amount, nonce, userSigHex, gwSigHex)
 
-  // assemble the drain() unlock with BOTH sigs (gateway sig from the Go RequestDrain)
-  const unlock = await instance.getUnlockingScript(async (self: LLMPaymentChannel) => {
-    self.to = { tx: drainTx, inputIndex: 0 } as any
-    self.drain(BigInt(amount), BigInt(nonce), Sig(userSigHex), Sig(gwSigHex))
-  })
-  drainTx.inputs[0].setScript(unlock)
-
-  // Fee input[1] is left UNSIGNED on purpose. peck-host /submit-drain gateway-signs
-  // it with PECKHOST_PRIVKEY before broadcast (the channel was opened above with
-  // fee_txid/fee_vout/fee_satoshi_value, so the server knows the fee outpoint).
-  // The gateway fee key never leaves the server — this is the non-custodial path.
-
-  // ── Step 5: submit to peck-host for fee-sign + verify + ARC broadcast ──
+  // ── Step 7: submit — peck-host fee-signs input[1], verifies, broadcasts via ARC ──
   console.log(`drain tx ${drainTx.id} | inputs ${drainTx.inputs.length} outputs ${drainTx.outputs.length}`)
-  const submit = await api('/api/channels/submit-drain', { channel_txid: dep.txid, signed_tx_hex: drainTx.toString() }, userPubKey)
+  const submit = await gw.submitDrain(channel.channelTxid, drainTx.toString())
   console.log('\nsubmit-drain:', submit.status, JSON.stringify(submit.json || submit.text).slice(0, 400))
   if (submit.ok && submit.json?.txid) {
-    console.log('\n🎉 DRAIN PROVEN THROUGH THE GO HTTP PATH — deploy ' + dep.txid + ' / drain ' + submit.json.txid)
+    console.log('\n🎉 DRAIN PROVEN THROUGH THE GO HTTP PATH — deploy ' + channel.channelTxid + ' / drain ' + submit.json.txid)
   }
 }
-main().catch((e) => { console.error('GOPATH-E2E-ERR:', e?.message || String(e)); process.exit(1) })
+main().catch((e) => {
+  console.error('GOPATH-E2E-ERR:', e?.message || String(e))
+  process.exit(1)
+})

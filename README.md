@@ -1,6 +1,55 @@
-# llm-payment-channel
+# peck-channel
 
-sCrypt smart contract for BSV that implements a **lock-and-drain payment channel** for the LLM Gateway. Users lock satoshis on-chain, the gateway drains per API call, and the channel settles when closed or timed out.
+_(repo/dir still named `llm-payment-channel` — package is `peck-channel`)_
+
+The **canonical BSV payment-channel primitive** for the peck ecosystem: an sCrypt
+**lock-and-drain payment channel** contract + a **non-custodial client library** +
+the protocol spec. Users lock satoshis on-chain, a gateway drains per API call /
+per compute-second, and the channel settles on close or timeout.
+
+**Consumers:** peck.run (peck-host, compute per-second) · llm.peck.to (per-token) ·
+peck.fm (HLS paywall) · peck-overlay-schema paywall. The reference gateway is
+peck-host; the protocol both TS and Go honour is in **[`PECK_CHANNEL_SPEC.md`](./PECK_CHANNEL_SPEC.md)**.
+
+> **Non-custodial, proven on mainnet** (deploy `97fd93be…` / drain `569ddd1b…`,
+> ARC 200): the wallet signs only the user sighash; the gateway co-signs + fee-signs
+> and broadcasts server-side. No private key ever crosses the boundary.
+
+## Client library (`src/client`)
+
+The wallet/consumer half of the proven flow, byte-identical to the on-chain proof:
+
+```ts
+import { WalletClient } from '@bsv/sdk'
+import {
+  PeckChannelGateway, loadContractArtifact, deployChannel,
+  buildDrainSpend, walletSignSighash, assembleDrainUnlock,
+} from 'peck-channel' // or '../src/client' in-repo
+
+loadContractArtifact()
+const w = new WalletClient('auto', 'my-app.peck.to')
+const gw = new PeckChannelGateway('https://peck.run')
+
+const ch = await deployChannel({ wallet: w, gatewayPubHex, lockAmount: 600, feeFund: 1400, keyId: 'k1' })
+gw.setAuthPubKey(ch.userPubKey)
+await gw.open({ channel_txid: ch.channelTxid, amount: 600, script_hex: ch.lockingScript.toHex(),
+                satoshi_value: 600, vout: 0, user_pubkey: ch.userPubKey,
+                fee_txid: ch.channelTxid, fee_vout: ch.feeVout, fee_satoshi_value: 1400 })
+// …meter accrues PendingDrain in prod…
+const { drain_amount, nonce } = (await gw.requestDrain(ch.channelTxid)).json!
+const { drainTx, sighash } = buildDrainSpend(ch, drain_amount, nonce, 1300)
+const { gateway_sig } = (await gw.cosignDrain(ch.channelTxid, sighash.toString('hex'))).json!
+const userSig = await walletSignSighash(w, sighash, ch.userPubKey, { keyId: 'k1' })
+await assembleDrainUnlock(ch.instance, drainTx, drain_amount, nonce, userSig, gateway_sig)
+await gw.submitDrain(ch.channelTxid, drainTx.toString()) // gateway fee-signs + broadcasts
+```
+
+`settle-sidecar/e2e-gopath-drain.ts` drives exactly this and doubles as the on-chain
+conformance test (`npm run drain-e2e`; see [`settle-sidecar/RUNBOOK_DRAIN_E2E.md`](./settle-sidecar/RUNBOOK_DRAIN_E2E.md)).
+
+---
+
+## Kontrakt (sCrypt)
 
 ## Arkitektur
 

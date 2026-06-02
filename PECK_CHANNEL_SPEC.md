@@ -8,7 +8,7 @@ peck.channel er **primitivet for alle BSV-betalingskanaler** i økosystemet — 
 
 1. **Kontrakt-artefakt** — den kompilerte sCrypt-kontrakten (`LLMPaymentChannel`). Én kilde, deles av alle.
 2. **Protokoll-spec** (dette dokumentet) — ABI, sighash-konstruksjon, nonce/receipt-semantikk, gateway-HTTP-kontrakt. Språknøytral sannhet.
-3. **TS-klientlib** — wallet-side: bygg next-state, deriver sighash, hent bruker-sig fra BRC-100-wallet, sett sammen unlock. Frøet ligger i `settle-sidecar/reference-walletsig-*.ts` + `e2e-gopath-drain.ts`.
+3. **TS-klientlib** — wallet-side: bygg next-state, deriver sighash, hent bruker-sig fra BRC-100-wallet, sett sammen unlock. **Realisert i `src/client/`** (`PeckChannelGateway` + `deployChannel`/`buildDrainSpend`/`walletSignSighash`/`assembleDrainUnlock`), byte-identisk med den beviste stien; `settle-sidecar/e2e-gopath-drain.ts` konsumerer den og er conformance-testen.
 4. **Go-gateway-lib** — gateway-side: bygg drain/close, co-sign, sign fee-input, broadcast via ARC. Frøet ligger i `peck-host/billing/*`. Skal dedupe llm-gateway sin parallelle `internal/payment/*`.
 
 Go kan ikke importere sCrypt-libben — derfor er (3) og (4) separate. Limet som garanterer at de er enige: **`settle-sidecar/sighash-parity-check.ts`** (go-bt-sighash == scryptlib-sighash, bevist). Enhver endring i sighash-konstruksjon MÅ holde paritetssjekken grønn.

@@ -11,10 +11,17 @@
  *      drain spend, co-signs the ANYONECANPAY_SINGLE sighash with PECKHOST_PRIVKEY,
  *      and returns {gateway_sig, sighash, amount, nonce, ...}
  *   4. [TS] rebuild the REAL next-state output (instance.next(), amountSpent/nonce
- *      advanced), re-derive the sighash, get the user's wallet signature over it,
- *      assemble the drain() unlock (user + gateway sigs)                [PROMPT #2]
- *   5. [HTTP→Go] POST /api/channels/submit-drain — peck-host VerifyDrainTx +
- *      SettleDrain broadcasts via ARC and advances state.
+ *      advanced), re-derive the sighash
+ *   5. [HTTP→Go] POST /api/channels/cosign-drain — gateway re-signs the client's
+ *      REAL digest with PECKHOST_PRIVKEY (the placeholder sighash from RequestDrain
+ *      no longer matches the rebuilt next-state output)
+ *   6. [TS] get the user's wallet signature over the sighash, assemble the drain()
+ *      unlock (user + gateway sigs), leave the fee input UNSIGNED          [PROMPT #2]
+ *   7. [HTTP→Go] POST /api/channels/submit-drain — peck-host gateway-signs the fee
+ *      input, VerifyDrainTx, SettleDrain broadcasts via ARC and advances state.
+ *
+ * NON-CUSTODIAL: the client never holds a gateway key. PECKHOST_FEE_WIF is gone —
+ * the gateway co-signs (cosign-drain) and fee-signs (submit-drain) server-side.
  *
  * PRE-REQ: peck-host running locally in NON-mock with a funded gateway key:
  *   cd peck-host && PECKHOST_PRIVKEY=<wif> PECKHOST_PUBKEY=<hex> \
@@ -108,6 +115,11 @@ async function main() {
     vout: 0,
     user_pubkey: userPubKey,
     expiry_time: Number(expiry),
+    // Register the gateway fee-fund UTXO so /submit-drain can gateway-sign the fee
+    // input itself — the client never needs PECKHOST_FEE_WIF (non-custodial).
+    fee_txid: dep.txid,
+    fee_vout: feeVout,
+    fee_satoshi_value: FEEFUND,
   }, userPubKey)
   console.log('open:', open.status, JSON.stringify(open.json || open.text).slice(0, 200))
   if (!open.ok) throw new Error('open failed')
@@ -154,23 +166,21 @@ async function main() {
   const sighash = bsv.crypto.Hash.sha256sha256(Buffer.from(preimageHex, 'hex'))
   console.log('client-rebuilt sighash:', sighash.toString('hex'))
 
-  // ── Gateway RE-CO-SIGN over the CLIENT-rebuilt sighash ──
+  // ── Gateway RE-CO-SIGN over the CLIENT-rebuilt sighash (PRODUCTION path) ──
   // RequestDrain co-signed over a sighash computed with the CURRENT script as a
   // placeholder state output (BuildDrainSpend can't run scryptlib to produce the
   // real next-state script). The client just rebuilt the output with the REAL
   // next-state script → a DIFFERENT sighash, so the gateway sig from RequestDrain
-  // no longer matches. In prod the client posts this sighash back to a gateway
-  // co-sign endpoint; here we hold the same gateway WIF (PECKHOST_FEE_WIF) and
-  // re-sign locally over the correct digest. This keeps the full Go HTTP path
-  // (open/accrue/request/submit) while fixing the placeholder-sighash mismatch.
-  const gwWif = process.env.PECKHOST_FEE_WIF
-  if (!gwWif) throw new Error('PECKHOST_FEE_WIF required to re-co-sign gateway half over the client sighash')
-  const gwPriv = bsv.PrivateKey.fromWIF(gwWif)
-  const gwSigObj = bsv.crypto.ECDSA.sign(sighash, gwPriv)
-  const gwOk = bsv.crypto.ECDSA.verify(sighash, gwSigObj, gwPriv.publicKey)
-  if (!gwOk) throw new Error('gateway re-sign does not verify locally')
-  const gwSigHex = gwSigObj.toDER().toString('hex') + ACP_SINGLE_FORKID.toString(16).padStart(2, '0')
-  console.log('✅ gateway re-co-signed over client sighash')
+  // no longer matches. The non-custodial fix: POST the real digest to
+  // /api/channels/cosign-drain and let the gateway re-sign it with PECKHOST_PRIVKEY
+  // server-side. No gateway key (PECKHOST_FEE_WIF) is ever held client-side.
+  const cosign = await api('/api/channels/cosign-drain',
+    { channel_txid: dep.txid, sighash_hex: sighash.toString('hex') }, userPubKey)
+  if (!cosign.ok || !cosign.json?.gateway_sig) {
+    throw new Error('cosign-drain failed: ' + (cosign.json?.error || cosign.text))
+  }
+  const gwSigHex = cosign.json.gateway_sig as string
+  console.log('✅ gateway co-signed client sighash via /api/channels/cosign-drain')
 
   // ── PROMPT #2: user signs the sighash ──
   console.log('\n>>> PROMPT #2: approve the drain signature in your wallet...')
@@ -192,34 +202,12 @@ async function main() {
   })
   drainTx.inputs[0].setScript(unlock)
 
-  // sign the fee input (input[1]) — but the gateway holds the fee-fund key
-  // (gatewayP2PKH). The gateway must sign this; for the proof the gateway key is
-  // PECKHOST_PRIVKEY which the SERVER holds, not us. So submit-drain must broadcast
-  // a tx where input[1] is gateway-signed. SIMPLEST: send the partially-signed tx
-  // (contract input done) to peck-host and let it sign the fee input before
-  // broadcast. But submit-drain currently just broadcasts. So we need the fee key
-  // here. If PECKHOST_FEE_WIF is provided (same key, for the proof), sign locally.
-  const feeWif = process.env.PECKHOST_FEE_WIF
-  if (!feeWif) {
-    console.log('\n⚠️ PECKHOST_FEE_WIF not set — cannot sign the gateway fee input locally.')
-    console.log('   The drain unlock (contract input) is built + user-signed correctly.')
-    console.log('   To finish: either (a) set PECKHOST_FEE_WIF=<same as PECKHOST_PRIVKEY> so this')
-    console.log('   driver signs the fee input, or (b) extend submit-drain to gateway-sign input[1].')
-    console.log('   Deploy ' + dep.txid + ' reclaimable via timeout. Stopping before incomplete broadcast.')
-    return
-  }
-  const feePriv = bsv.PrivateKey.fromWIF(feeWif)
-  const feeSig = bsv.Transaction.Sighash.sign(
-    drainTx, feePriv, bsv.crypto.Signature.SIGHASH_ALL | bsv.crypto.Signature.SIGHASH_FORKID,
-    1, deployTx.outputs[feeVout].script, new bsv.crypto.BN(FEEFUND)
-  )
-  drainTx.inputs[1].setScript(
-    bsv.Script.empty()
-      .add(Buffer.concat([feeSig.toDER(), Buffer.from([bsv.crypto.Signature.SIGHASH_ALL | bsv.crypto.Signature.SIGHASH_FORKID])]))
-      .add(feePriv.publicKey.toBuffer())
-  )
+  // Fee input[1] is left UNSIGNED on purpose. peck-host /submit-drain gateway-signs
+  // it with PECKHOST_PRIVKEY before broadcast (the channel was opened above with
+  // fee_txid/fee_vout/fee_satoshi_value, so the server knows the fee outpoint).
+  // The gateway fee key never leaves the server — this is the non-custodial path.
 
-  // ── Step 5: submit to peck-host for verify + ARC broadcast ──
+  // ── Step 5: submit to peck-host for fee-sign + verify + ARC broadcast ──
   console.log(`drain tx ${drainTx.id} | inputs ${drainTx.inputs.length} outputs ${drainTx.outputs.length}`)
   const submit = await api('/api/channels/submit-drain', { channel_txid: dep.txid, signed_tx_hex: drainTx.toString() }, userPubKey)
   console.log('\nsubmit-drain:', submit.status, JSON.stringify(submit.json || submit.text).slice(0, 400))

@@ -10,10 +10,18 @@ _Sist oppdatert: 2026-06-01_
 - userPubKey = BRC-42-derivert child (`getPublicKey{counterparty:'self',forSelf:true}`). Bruker funder via createAction → deploy `cfe76859`. Gateway bygger FIX-A close. **Bruker signerer sighash i egen wallet via `createSignature{hashToDirectlySign}`** (privatnøkkel forlater aldri walleten) → lokal ECDSA-verify → close `628ac044` `SEEN_ON_NETWORK`, close()-assert passerte med wallet-sig. Kanonisk referanse: `settle-sidecar/reference-walletsig-close.ts`.
 - Teknisk nøkkel: `hashToDirectlySign` = sighash (hash256 av BIP143-preimage via scryptlib `getPreimage`) → verifiserer rett mot `checkSig`. Sig injiseres via `getUnlockingScript`.
 
-## Neste
-- Produksjonalisér: sidecar (`server.ts`) tar klient-wallet-sig i stedet for `userPrivWIF` (close-endpoint mottar sighash→sig fra klient, ikke nøkkel). Gateway orkestrerer deploy/sighash/inject/broadcast.
+## 2026-06-02 — peck.channel seam-først: non-custodial drain E2E BEVIST ON-CHAIN ✅
+- `PECK_CHANNEL_SPEC.md` skrevet (primitiv-spec: ABI, ACP_SINGLE-sighash, non-custodial-regel, gateway-HTTP-kontrakt).
+- GAP 1 ✅ `e2e-gopath-drain.ts`: lokal `PECKHOST_FEE_WIF`-re-sign → `POST /api/channels/cosign-drain`; fee-input sendes USIGNERT.
+- GAP 2 ✅ peck-host: `/open` fanger fee-UTXO; `billing.GatewaySignFeeInput` (go-bt P2PKH) signerer fee-input[1] i `SubmitDrain` før broadcast.
+- **BEVIST MAINNET:** deploy `97fd93be…7293` / drain `569ddd1b…423f` (ARC 200). Wallet signerte kun bruker-sighash; gateway co-signet+fee-signet server-side. Non-custodial drain gjennom peck.run Go-HTTP-stien.
+- LÆRDOM: go-bt `GetInputSignatureHash` er reversert; må signere `bt.ReverseBytes(sh)` for fee-input (ellers ARC 461 NULLFAIL). Fanget på 2. on-chain-forsøk.
+
+## Neste (etter live-proof)
+- Seed `peck-channel`-pakke rundt bevist sti (contract+spec+TS-klient+Go-lib); dedupe llm-gateway `internal/payment/*`.
+- Produksjonalisér sidecar `server.ts`: klient-wallet-sig i stedet for `userPrivWIF`.
 - Mirror FIX A + nøkkel-lag + wallet-sig til FetchPaymentChannel (peck-overlay-schema paywall — stubbet /close + /timeout).
-- Wire sidecar ↔ gateway (Go broadcaster.Arc) for `ENFORCE_PAYMENT`-tier.
+- Wire sidecar ↔ gateway for `ENFORCE_PAYMENT`-tier på llm.peck.to.
 
 ## Kontekst
 - Del av llm-gateway 402-laget OG peck.run drain-stack. Proven flow ligger som referanse i `settle-sidecar/spike-close-broadcast.ts` (lokal, ucommittet).

@@ -56,6 +56,23 @@ export interface SubmitDrainResult {
   error?: string
 }
 
+export interface CloseInfoResult {
+  lock_amount: number
+  amount_spent: number
+  user_pubkey: string
+  gateway_pubkey: string
+  vout: number
+  script_hex: string
+  satoshi_value: number
+  error?: string
+}
+
+export interface SubmitCloseResult {
+  status?: string
+  txid?: string
+  error?: string
+}
+
 /**
  * HTTP client for a peck.channel gateway. Construct with the gateway base URL and
  * the caller's identity pubkey (sent as `Authorization: Bearer <pubkey>`).
@@ -108,6 +125,16 @@ export class PeckChannelGateway {
   /** Post the finished drain tx; the gateway fee-signs input[1], verifies, and broadcasts via ARC. */
   submitDrain(channelTxid: string, signedTxHex: string): Promise<GatewayResponse<SubmitDrainResult>> {
     return this.post('/api/channels/submit-drain', { channel_txid: channelTxid, signed_tx_hex: signedTxHex })
+  }
+
+  /** Fetch the gateway's authoritative channel state (amountSpent etc.) to build a close() tx. */
+  requestClose(channelTxid: string): Promise<GatewayResponse<CloseInfoResult>> {
+    return this.post('/api/channels/close', { channel_txid: channelTxid })
+  }
+
+  /** Post the finished close() tx (user-signed); the gateway verifies the split, broadcasts, ends the channel. */
+  submitClose(channelTxid: string, signedTxHex: string, fee: number): Promise<GatewayResponse<SubmitCloseResult>> {
+    return this.post('/api/channels/submit-close', { channel_txid: channelTxid, signed_tx_hex: signedTxHex, fee })
   }
 
   /**

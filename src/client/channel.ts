@@ -27,6 +27,10 @@ export const ACP_SINGLE_FORKID =
   bsv.crypto.Signature.SIGHASH_SINGLE |
   bsv.crypto.Signature.SIGHASH_FORKID
 
+/** SIGHASH_ALL | FORKID = 0x41 — the flag close()/timeout() are annotated with. */
+export const SIGHASH_ALL_FORKID =
+  bsv.crypto.Signature.SIGHASH_ALL | bsv.crypto.Signature.SIGHASH_FORKID
+
 /** Load the compiled LLMPaymentChannel artifact (defaults to the repo's artifacts/ path). */
 export function loadContractArtifact(artifactPath?: string): void {
   const p =
@@ -96,17 +100,26 @@ export async function deployChannel(params: DeployChannelParams): Promise<Deploy
     bsv.Address.fromPublicKey(bsv.PublicKey.fromString(params.gatewayPubHex), net)
   )
 
+  // The fee-fund output (gateway-owned) only matters for drain (its fee comes from a
+  // separate input). close() takes its fee from channel value, so a close-only channel
+  // can skip it: feeFund <= 0 deploys just the contract output.
+  const outputs: any[] = [
+    { lockingScript: lockingScript.toHex(), satoshis: params.lockAmount, outputDescription: 'channel deposit' },
+  ]
+  if (params.feeFund > 0) {
+    outputs.push({ lockingScript: gatewayP2PKH.toHex(), satoshis: params.feeFund, outputDescription: 'drain fee fund' })
+  }
   const dep = await params.wallet.createAction({
     description: params.description || 'Deploy peck-channel',
-    outputs: [
-      { lockingScript: lockingScript.toHex(), satoshis: params.lockAmount, outputDescription: 'channel deposit' },
-      { lockingScript: gatewayP2PKH.toHex(), satoshis: params.feeFund, outputDescription: 'drain fee fund' },
-    ],
+    outputs,
     options: { acceptDelayedBroadcast: false, randomizeOutputs: false },
   })
 
   const deployTx = new bsv.Transaction(SdkTx.fromAtomicBEEF(dep.tx as number[]).toHex())
-  const feeVout = deployTx.outputs.findIndex((o: any) => o.script.toHex() === gatewayP2PKH.toHex())
+  const feeVout =
+    params.feeFund > 0
+      ? deployTx.outputs.findIndex((o: any) => o.script.toHex() === gatewayP2PKH.toHex())
+      : -1
 
   return {
     channelTxid: dep.txid as string,
@@ -177,9 +190,10 @@ export async function walletSignSighash(
   wallet: WalletClient,
   sighash: Buffer,
   userPubKey: string,
-  opts: { keyId: string; protocol?: [number, string] }
+  opts: { keyId: string; protocol?: [number, string]; sighashFlag?: number }
 ): Promise<string> {
   const protocol = opts.protocol || DEFAULT_PROTOCOL
+  const flag = opts.sighashFlag ?? ACP_SINGLE_FORKID // drain default; pass SIGHASH_ALL_FORKID for close
   const { signature } = await wallet.createSignature({
     hashToDirectlySign: Array.from(sighash),
     protocolID: protocol as any,
@@ -191,8 +205,8 @@ export async function walletSignSighash(
     bsv.crypto.Signature.fromDER(Buffer.from(signature)),
     bsv.PublicKey.fromString(userPubKey)
   )
-  if (!ok) throw new Error('user sig does not verify locally over the drain sighash')
-  return Buffer.from(signature).toString('hex') + ACP_SINGLE_FORKID.toString(16).padStart(2, '0')
+  if (!ok) throw new Error('user sig does not verify locally over the sighash')
+  return Buffer.from(signature).toString('hex') + flag.toString(16).padStart(2, '0')
 }
 
 /**
@@ -213,4 +227,64 @@ export async function assembleDrainUnlock(
     self.drain(BigInt(drainAmount), BigInt(nonce), Sig(userSigHex), Sig(gatewaySigHex))
   })
   drainTx.inputs[0].setScript(unlock)
+}
+
+export interface CloseSpend {
+  closeTx: any
+  /** BIP143 SIGHASH_ALL sighash the user signs (input[0]). */
+  sighash: Buffer
+}
+
+/**
+ * Build the FIX-A close() spend: a SINGLE contract input + the split outputs only
+ * (gateway ← amountSpent if >0, then user ← lockAmount − amountSpent − fee if >0),
+ * NO change. The fee is taken from channel value. Byte-identical to the proven
+ * reference-walletsig-close.ts, extended for amountSpent > 0. close() needs only the
+ * user signature — no gateway co-sign — so the returned sighash is final.
+ *
+ * `amountSpent` should be the gateway's authoritative tally (from requestClose).
+ */
+export function buildCloseSpend(channel: DeployedChannel, amountSpent: number, fee: number): CloseSpend {
+  const { instance, deployTx, lockingScript, gatewayPubHex, userPubKey, lockAmount } = channel
+  const net = bsv.Networks.mainnet // P2PKH locking script is network-independent (hash160 only)
+
+  const gatewayAmount = amountSpent
+  const userAmount = lockAmount - amountSpent - fee
+  if (userAmount < 0)
+    throw new Error(`close fee ${fee} exceeds user balance (lock ${lockAmount}, spent ${amountSpent})`)
+
+  instance.from = { tx: deployTx, outputIndex: 0 } as any
+  const closeTx = new bsv.Transaction().addInput(instance.buildContractInput())
+
+  // Contract order: gateway first (if >0), then user (if >0) — matches close()'s guards.
+  if (gatewayAmount > 0) {
+    const gwP2PKH = bsv.Script.buildPublicKeyHashOut(
+      bsv.Address.fromPublicKey(bsv.PublicKey.fromString(gatewayPubHex), net)
+    )
+    closeTx.addOutput(new bsv.Transaction.Output({ script: gwP2PKH, satoshis: gatewayAmount }))
+  }
+  if (userAmount > 0) {
+    const userP2PKH = bsv.Script.buildPublicKeyHashOut(
+      bsv.Address.fromPublicKey(bsv.PublicKey.fromString(userPubKey), net)
+    )
+    closeTx.addOutput(new bsv.Transaction.Output({ script: userP2PKH, satoshis: userAmount }))
+  }
+
+  const preimageHex = getPreimage(closeTx, lockingScript, lockAmount, 0, SIGHASH_ALL_FORKID)
+  const sighash = bsv.crypto.Hash.sha256sha256(Buffer.from(preimageHex, 'hex'))
+  return { closeTx, sighash }
+}
+
+/** Assemble the close() unlocking script (userSig + fee) onto input[0]. */
+export async function assembleCloseUnlock(
+  instance: LLMPaymentChannel,
+  closeTx: any,
+  userSigHex: string,
+  fee: number
+): Promise<void> {
+  const unlock = await instance.getUnlockingScript(async (self: LLMPaymentChannel) => {
+    self.to = { tx: closeTx, inputIndex: 0 } as any
+    self.close(Sig(userSigHex), BigInt(fee))
+  })
+  closeTx.inputs[0].setScript(unlock)
 }

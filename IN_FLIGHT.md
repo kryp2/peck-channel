@@ -25,8 +25,16 @@ _Sist oppdatert: 2026-06-01_
 ## 2026-06-02 (forts.) — peck-channel lib VALIDERT ON-CHAIN ✅
 - `npm run drain-e2e` via lib-en: deploy `b6e09b97…b38e` / drain `822a773c…c9bb` (ARC 200). Behavior-preserving refaktor bekreftet — lib-en (ikke bare inline-scriptet) flytter sats non-custodial.
 
+## 2026-06-02 (forts.) — close() produktisert (settlement-halvdelen)
+- close = der pengene FAKTISK flytter (drain holder verdi låst, advancer kun amountSpent som checkpoint). peck-host hadde ingen close → lagt til.
+- peck-host: `billing/close_tx.go` (`VerifyCloseTx` — split `[gateway←amountSpent, user←lock−spent−fee]`, FIX-A, kun struktur) + `RequestClose`/`SubmitClose` handlers + ruter `/api/channels/{close,submit-close}`. Bygger+vet grønt.
+- lib: `SIGHASH_ALL_FORKID`, `buildCloseSpend`/`assembleCloseUnlock`, `walletSignSighash` tar nå `sighashFlag`. `deployChannel` hopper fee-fund når `feeFund<=0` (close trenger den ikke). gateway-klient `requestClose`/`submitClose`. Driver `e2e-gopath-close.ts` (`npm run close-e2e`). Typecheck rent.
+- close trenger KUN userSig (ingen cosign, ingen placeholder) — enklere enn drain.
+
 ## Neste
-- La peck.run-meteren drive drainen automatisk (uten accrue-hook) — fra "test-driver" til "produktet gjør det selv".
+- Re-validér close on-chain (`npm run close-e2e`, 2 prompts: deposit + close-sig). amountSpent=0-scenario først.
+- Drain→close lifecycle: peck-host sporer ikke post-drain outpoint (kanal-UTXO flytter per drain) — må fikses for close-etter-drain (gateway-output-grenen).
+- La peck.run-meteren drive drain/close automatisk (uten accrue-hook) mot et pre-autorisert receipt-tak.
 - Senere: dedupe llm-gateway `internal/payment/*` mot SPEC; mirror FIX A til FetchPaymentChannel (peck-overlay-schema paywall).
 - Produksjonalisér sidecar `server.ts`: klient-wallet-sig i stedet for `userPrivWIF`.
 - Mirror FIX A + nøkkel-lag + wallet-sig til FetchPaymentChannel (peck-overlay-schema paywall — stubbet /close + /timeout).

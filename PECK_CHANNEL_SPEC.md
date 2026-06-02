@@ -63,8 +63,9 @@ Disse rutene definerer peck.channel-gatewayen. peck-host implementerer dem (`api
 | `POST /channels/drain` (RequestDrain) | klient→gateway | Gateway bygger drain-spend, co-signer ANYONECANPAY_SINGLE-sighash, returnerer `{gateway_sig, sighash, drain_amount, nonce}`. |
 | `POST /channels/cosign-drain` | klient→gateway | **(commit `8dba2b7`)** Klient poster sin rebygde sighash; gateway re-co-signer den med gateway-nøkkel. Tetter placeholder-sighash-gapet. |
 | `POST /channels/submit-drain` | klient→gateway | Klient poster ferdig drain-tx (kontrakt-input bruker-signert). Gateway `VerifyDrainTx` + **signerer fee-input[1]** + `SettleDrain` broadcaster via ARC. |
-| `POST /channels/close` | klient→gateway | Gateway bygger FIX-A close, klient signerer sighash i wallet, gateway broadcaster. |
-| `POST /channels/timeout` | klient→gateway | Etter expiry: bruker reclaimer hele lockAmount. |
+| `POST /channels/close` | klient→gateway | **(impl.)** Gateway returnerer autoritativ `amountSpent` + params; klienten bygger FIX-A close (`buildCloseSpend`), bruker signerer SIGHASH_ALL i wallet. Ingen gateway-cosign (close trenger kun userSig). |
+| `POST /channels/submit-close` | klient→gateway | **(impl.)** Klient poster ferdig close-tx; gateway `VerifyCloseTx` (split = `[gateway←amountSpent, user←lockAmount−amountSpent−fee]`) + broadcast via ARC + avslutter kanalen. |
+| `POST /channels/timeout` | klient→gateway | Etter expiry: bruker reclaimer hele lockAmount. (Ikke produktisert ennå — samme mønster som close.) |
 
 Broadcast går ALLTID via ARC (`arc.gorillapool.io`), aldri WoC i loop.
 

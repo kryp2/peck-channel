@@ -22,8 +22,10 @@ _Sist oppdatert: 2026-06-01_
 - `e2e-gopath-drain.ts` rewiret til å konsumere lib-en → conformance-test (`npm run drain-e2e`). README + spec oppdatert.
 - IKKE rørt: llm-gateway (eget provider-arbeid), peck-contracts, FetchPaymentChannel. Go-gateway-lib = peck-host/billing forblir referansen (Go-consumers avhenger av SPEC, ikke npm-pakka).
 
+## 2026-06-02 (forts.) — peck-channel lib VALIDERT ON-CHAIN ✅
+- `npm run drain-e2e` via lib-en: deploy `b6e09b97…b38e` / drain `822a773c…c9bb` (ARC 200). Behavior-preserving refaktor bekreftet — lib-en (ikke bare inline-scriptet) flytter sats non-custodial.
+
 ## Neste
-- Re-validér lib-en on-chain ved neste wallet-økt (kjør `npm run drain-e2e` — beviser kjede + lib i ett).
 - La peck.run-meteren drive drainen automatisk (uten accrue-hook) — fra "test-driver" til "produktet gjør det selv".
 - Senere: dedupe llm-gateway `internal/payment/*` mot SPEC; mirror FIX A til FetchPaymentChannel (peck-overlay-schema paywall).
 - Produksjonalisér sidecar `server.ts`: klient-wallet-sig i stedet for `userPrivWIF`.

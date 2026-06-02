@@ -31,8 +31,12 @@ _Sist oppdatert: 2026-06-01_
 - lib: `SIGHASH_ALL_FORKID`, `buildCloseSpend`/`assembleCloseUnlock`, `walletSignSighash` tar nå `sighashFlag`. `deployChannel` hopper fee-fund når `feeFund<=0` (close trenger den ikke). gateway-klient `requestClose`/`submitClose`. Driver `e2e-gopath-close.ts` (`npm run close-e2e`). Typecheck rent.
 - close trenger KUN userSig (ingen cosign, ingen placeholder) — enklere enn drain.
 
+## 2026-06-02 (forts.) — close BEVIST ON-CHAIN ✅
+- `npm run close-e2e` via lib-en: deploy `25833bc3…d705` / close `4980815075…2f959` (ARC 200, status closed). amountSpent=0 → user 500, fee 700. Settlement gjennom peck.run Go-stien bekreftet.
+- LÆRDOM: createAction-500-ene var peck-desktop approval-TIMEOUT (treg godkjenning), IKKE saldo. Godkjenn promptene raskt. (Drains gikk da Thomas var i tide; close feilet 3× da han ikke fulgte med.)
+
 ## Neste
-- Re-validér close on-chain (`npm run close-e2e`, 2 prompts: deposit + close-sig). amountSpent=0-scenario først.
+- Drain→close lifecycle (amountSpent>0): peck-host sporer ikke post-drain outpoint — fiks for gateway-output-grenen.
 - Drain→close lifecycle: peck-host sporer ikke post-drain outpoint (kanal-UTXO flytter per drain) — må fikses for close-etter-drain (gateway-output-grenen).
 - La peck.run-meteren drive drain/close automatisk (uten accrue-hook) mot et pre-autorisert receipt-tak.
 - Senere: dedupe llm-gateway `internal/payment/*` mot SPEC; mirror FIX A til FetchPaymentChannel (peck-overlay-schema paywall).

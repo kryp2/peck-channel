@@ -34,7 +34,7 @@ import {
 
 const HOST = process.env.PECK_HOST_URL || 'http://localhost:8080'
 const KEYID = 'e2e-gopath-close-1'
-const LOCK = 2500
+const LOCK = 1200
 const CLOSE_FEE = 700 // taken from channel value; user refund = LOCK - amountSpent - fee
 
 async function main() {

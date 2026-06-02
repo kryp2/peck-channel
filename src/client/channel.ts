@@ -321,3 +321,60 @@ export async function assembleCloseUnlock(
   })
   closeTx.inputs[0].setScript(unlock)
 }
+
+export interface TimeoutSpend {
+  timeoutTx: any
+  /** BIP143 SIGHASH_ALL sighash the user signs (input[0]). */
+  sighash: Buffer
+}
+
+/**
+ * Build the timeout() spend — the user's GATEWAY-INDEPENDENT safety valve. After
+ * expiryTime the user reclaims the FULL channel value (minus fee) regardless of
+ * amountSpent: a single contract input + one user P2PKH output, with nLockTime set
+ * to expiryTime and a non-final input sequence so the contract's
+ * `ctx.locktime >= expiryTime` assert holds. timeout() needs only the user's
+ * signature and NO gateway involvement — the user can broadcast it straight to ARC
+ * if the gateway disappears.
+ *
+ * The deploy's expiryTime must already have passed for the network to accept the
+ * tx (nLockTime in the past = final).
+ */
+export function buildTimeoutSpend(channel: DeployedChannel, fee: number): TimeoutSpend {
+  const { instance, deployTx, lockingScript, userPubKey, lockAmount, expiry } = channel
+  const net = bsv.Networks.mainnet
+
+  const userAmount = lockAmount - fee // ctx.utxo.value == lockAmount (drain keeps value constant)
+  if (userAmount <= 0) throw new Error(`timeout fee ${fee} exceeds channel value ${lockAmount}`)
+
+  instance.from = { tx: deployTx, outputIndex: 0 } as any
+  const userP2PKH = bsv.Script.buildPublicKeyHashOut(
+    bsv.Address.fromPublicKey(bsv.PublicKey.fromString(userPubKey), net)
+  )
+  const timeoutTx = new bsv.Transaction()
+    .addInput(instance.buildContractInput())
+    .addOutput(new bsv.Transaction.Output({ script: userP2PKH, satoshis: userAmount }))
+
+  // nLockTime = expiryTime + non-final sequence → the contract's locktime assert
+  // passes and the network enforces the timelock.
+  timeoutTx.nLockTime = Number(expiry)
+  timeoutTx.inputs[0].sequenceNumber = 0xfffffffe
+
+  const preimageHex = getPreimage(timeoutTx, lockingScript, lockAmount, 0, SIGHASH_ALL_FORKID)
+  const sighash = bsv.crypto.Hash.sha256sha256(Buffer.from(preimageHex, 'hex'))
+  return { timeoutTx, sighash }
+}
+
+/** Assemble the timeout() unlocking script (userSig + fee) onto input[0]. */
+export async function assembleTimeoutUnlock(
+  instance: LLMPaymentChannel,
+  timeoutTx: any,
+  userSigHex: string,
+  fee: number
+): Promise<void> {
+  const unlock = await instance.getUnlockingScript(async (self: LLMPaymentChannel) => {
+    self.to = { tx: timeoutTx, inputIndex: 0 } as any
+    self.timeout(Sig(userSigHex), BigInt(fee))
+  })
+  timeoutTx.inputs[0].setScript(unlock)
+}

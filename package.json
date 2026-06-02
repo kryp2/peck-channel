@@ -10,7 +10,8 @@
     "deploy": "ts-node deploy.ts",
     "settle": "ts-node settle-sidecar/server.ts",
     "drain-e2e": "ts-node settle-sidecar/e2e-gopath-drain.ts",
-    "close-e2e": "ts-node settle-sidecar/e2e-gopath-close.ts"
+    "close-e2e": "ts-node settle-sidecar/e2e-gopath-close.ts",
+    "lifecycle-e2e": "ts-node settle-sidecar/e2e-gopath-lifecycle.ts"
   },
   "dependencies": {
     "@bsv/sdk": "^2.0.2",

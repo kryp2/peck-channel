@@ -140,6 +140,10 @@ export interface DrainSpend {
   drainTx: any
   /** BIP143 ANYONECANPAY_SINGLE sighash both parties sign (input[0]). */
   sighash: Buffer
+  /** The advanced contract instance (amountSpent/nonce bumped) — spend it for a close-after-drain. */
+  nextInstance: LLMPaymentChannel
+  /** The next-state locking script hex (output[0] of the drain) — the post-drain channel UTXO's script. */
+  nextScriptHex: string
 }
 
 /**
@@ -178,7 +182,7 @@ export function buildDrainSpend(
   const preimageHex = getPreimage(drainTx, lockingScript, lockAmount, 0, ACP_SINGLE_FORKID)
   const sighash = bsv.crypto.Hash.sha256sha256(Buffer.from(preimageHex, 'hex'))
 
-  return { drainTx, sighash }
+  return { drainTx, sighash, nextInstance: next, nextScriptHex: nextScript.toHex() }
 }
 
 /**
@@ -244,8 +248,21 @@ export interface CloseSpend {
  *
  * `amountSpent` should be the gateway's authoritative tally (from requestClose).
  */
-export function buildCloseSpend(channel: DeployedChannel, amountSpent: number, fee: number): CloseSpend {
-  const { instance, deployTx, lockingScript, gatewayPubHex, userPubKey, lockAmount } = channel
+export function buildCloseSpend(
+  channel: DeployedChannel,
+  amountSpent: number,
+  fee: number,
+  opts?: {
+    /** Use the advanced instance from a prior drain (buildDrainSpend's nextInstance). */
+    instance?: LLMPaymentChannel
+    /** Post-drain channel UTXO txid (the drain's broadcast txid) — close spends this, not the deploy. */
+    fromTxId?: string
+    /** Post-drain next-state locking script hex (the drain's output[0]). */
+    fromScriptHex?: string
+  }
+): CloseSpend {
+  const { deployTx, lockingScript, gatewayPubHex, userPubKey, lockAmount } = channel
+  const instance = opts?.instance || channel.instance
   const net = bsv.Networks.mainnet // P2PKH locking script is network-independent (hash160 only)
 
   const gatewayAmount = amountSpent
@@ -253,7 +270,23 @@ export function buildCloseSpend(channel: DeployedChannel, amountSpent: number, f
   if (userAmount < 0)
     throw new Error(`close fee ${fee} exceeds user balance (lock ${lockAmount}, spent ${amountSpent})`)
 
-  instance.from = { tx: deployTx, outputIndex: 0 } as any
+  // Subscript for the BIP143 preimage = the prevout's locking script. For a close-
+  // after-drain this is the ADVANCED next-state script at the post-drain UTXO; for a
+  // fresh close it is the deploy's original contract script.
+  let subScript: any
+  if (opts?.fromTxId && opts?.fromScriptHex) {
+    instance.from = {
+      txId: opts.fromTxId,
+      outputIndex: 0,
+      script: opts.fromScriptHex,
+      satoshis: lockAmount,
+    } as any
+    subScript = bsv.Script.fromHex(opts.fromScriptHex)
+  } else {
+    instance.from = { tx: deployTx, outputIndex: 0 } as any
+    subScript = lockingScript
+  }
+
   const closeTx = new bsv.Transaction().addInput(instance.buildContractInput())
 
   // Contract order: gateway first (if >0), then user (if >0) — matches close()'s guards.
@@ -270,7 +303,7 @@ export function buildCloseSpend(channel: DeployedChannel, amountSpent: number, f
     closeTx.addOutput(new bsv.Transaction.Output({ script: userP2PKH, satoshis: userAmount }))
   }
 
-  const preimageHex = getPreimage(closeTx, lockingScript, lockAmount, 0, SIGHASH_ALL_FORKID)
+  const preimageHex = getPreimage(closeTx, subScript, lockAmount, 0, SIGHASH_ALL_FORKID)
   const sighash = bsv.crypto.Hash.sha256sha256(Buffer.from(preimageHex, 'hex'))
   return { closeTx, sighash }
 }

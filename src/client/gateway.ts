@@ -145,4 +145,18 @@ export class PeckChannelGateway {
   accrueDrain(channelTxid: string, amountSats: number): Promise<GatewayResponse> {
     return this.post('/api/channels/accrue-drain', { channel_txid: channelTxid, amount_sats: amountSats })
   }
+
+  /**
+   * DEV/TEST — start the real per-second meter on a channel without a Cloud Run
+   * deploy (PECKHOST_ALLOW_ACCRUE=1). The meter accrues PendingDrain live; settle it
+   * via the normal drain + close flow. In production hosting.Deploy starts the meter.
+   */
+  startMeter(channelTxid: string, costPerSec: number): Promise<GatewayResponse> {
+    return this.post('/api/channels/start-meter', { channel_txid: channelTxid, cost_per_sec: costPerSec })
+  }
+
+  /** DEV/TEST — stop the meter (a final accrual runs); returns the accrued pending_drain. */
+  stopMeter(channelTxid: string): Promise<GatewayResponse<{ pending_drain: number; total_accrued?: number; uptime_seconds?: number }>> {
+    return this.post('/api/channels/stop-meter', { channel_txid: channelTxid })
+  }
 }

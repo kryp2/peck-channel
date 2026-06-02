@@ -39,11 +39,11 @@ import {
 
 const HOST = process.env.PECK_HOST_URL || 'http://localhost:8080'
 const KEYID = 'e2e-gopath-lifecycle-1'
-const LOCK = 800
+const LOCK = 1000
 const DRAIN = 200
 const FEEFUND = 1400
 const DRAIN_FEE = 1300
-const CLOSE_FEE = 300
+const CLOSE_FEE = 700 // ARC min for this close tx ~633; user = LOCK - amountSpent - fee
 
 async function main() {
   const gatewayPubHex = process.env.PECKHOST_PUBKEY

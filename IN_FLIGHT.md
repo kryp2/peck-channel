@@ -35,8 +35,15 @@ _Sist oppdatert: 2026-06-01_
 - `npm run close-e2e` via lib-en: deploy `25833bc3…d705` / close `4980815075…2f959` (ARC 200, status closed). amountSpent=0 → user 500, fee 700. Settlement gjennom peck.run Go-stien bekreftet.
 - LÆRDOM: createAction-500-ene var peck-desktop approval-TIMEOUT (treg godkjenning), IKKE saldo. Godkjenn promptene raskt. (Drains gikk da Thomas var i tide; close feilet 3× da han ikke fulgte med.)
 
+## 2026-06-02 (forts.) — FULL LIFECYCLE BEVIST ON-CHAIN ✅ (deploy→drain→close, amountSpent>0)
+- `npm run lifecycle-e2e`: deploy `5ffd977b…e240` / drain `2e863c23…a7db` / close `43dd688aef7ba6…c84c994` (ARC 200). Gateway fikk 200 sat, bruker 100. Begge close-outputs (amountSpent>0-grenen), non-custodial.
+- peck-host: SettleDrain advancer kanal-UTXO-pekeren til drain-output[0] etter broadcast (drain.go). Lib: buildDrainSpend returnerer nextInstance+nextScriptHex; buildCloseSpend spender post-drain-UTXO (fromTxId/fromScriptHex + avansert instans + next-state subscript).
+- 2 BUGS fanget + fikset: (1) `VerifyDrainTx`/`sharesContractPrefix` krevde eksakt script-lengde — feil fordi sCrypt-ints er VARIABEL-bredde (amountSpent=200=0xC8 trenger 0x00-padding=2 bytes vs 50=1 byte). Fikset til min-lengde-prefix-sammenligning. (2) close fee=300 < ARC-min 633 → bump til 700, LOCK 1000.
+- Zero-conf-kjeding BEKREFTET: close spender ubekreftet drain-output, ARC godtok (ingen parent-not-found).
+
 ## Neste
-- Drain→close lifecycle (amountSpent>0): peck-host sporer ikke post-drain outpoint — fiks for gateway-output-grenen.
+- La peck.run-meteren drive drain/close mot pre-autorisert receipt-tak (samme BRC-77-mønster som llm-gateway) — symmetri mellom de to consumerne.
+- Senere: timeout() produktisering (user safety valve); dedupe llm-gateway internal/payment mot spec; mirror FIX A til FetchPaymentChannel.
 - Drain→close lifecycle: peck-host sporer ikke post-drain outpoint (kanal-UTXO flytter per drain) — må fikses for close-etter-drain (gateway-output-grenen).
 - La peck.run-meteren drive drain/close automatisk (uten accrue-hook) mot et pre-autorisert receipt-tak.
 - Senere: dedupe llm-gateway `internal/payment/*` mot SPEC; mirror FIX A til FetchPaymentChannel (peck-overlay-schema paywall).

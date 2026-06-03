@@ -24,13 +24,13 @@ PECKHOST_PRIVKEY=<wif> PECKHOST_PUBKEY=<hex> \
 
 **2. Kompiler kontrakten (om ikke gjort):**
 ```bash
-cd /home/thomas/Documents/peck-to/llm-payment-channel
+cd /home/thomas/Documents/peck-to/peck-channel
 npm run build < /dev/null   # → artifacts/contracts/LLMPaymentChannel.json
 ```
 
 **3. Kjør driveren (egen terminal, samme PECKHOST_PUBKEY):**
 ```bash
-cd /home/thomas/Documents/peck-to/llm-payment-channel
+cd /home/thomas/Documents/peck-to/peck-channel
 PECKHOST_PUBKEY=<hex> PECK_HOST_URL=http://localhost:8080 \
   npx ts-node settle-sidecar/e2e-gopath-drain.ts < /dev/null
 ```

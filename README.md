@@ -111,7 +111,7 @@ conformance test (`npm run drain-e2e`; see [`settle-sidecar/RUNBOOK_DRAIN_E2E.md
 ## Prosjektstruktur
 
 ```
-llm-payment-channel/
+peck-channel/
 ├── src/contracts/
 │   └── LLMPaymentChannel.ts    ← Smart contract (FERDIG)
 ├── tests/

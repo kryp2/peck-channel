@@ -60,6 +60,19 @@ sighash  = sha256sha256(preimage)
 
 **Protocol-ID er `[2, 'peck channel']`** (BRC-100-regex: kun bokstaver/tall/mellomrom — ingen bindestrek).
 
+## 2b. FetchPaymentChannel — søsken-varianten (per-fetch)
+
+`FetchPaymentChannel` er samme design som `LLMPaymentChannel`, generalisert for "pay-per-fetch" (overlay paywall, peck.fm). Re-homet hit fra peck-overlay-schema 2026-06-03 (mainnet-bevist FIX-A). Forskjeller:
+
+| | LLMPaymentChannel | FetchPaymentChannel |
+|---|---|---|
+| Expiry | `expiryTime` (unix-tid, `ctx.locktime >= 500_000_000`) | `expiryHeight` (block-høyde, `ctx.locktime < 500_000_000`) |
+| Nonce | match + 1 per drain | **strengt økende** (`newNonce > this.nonce`) |
+| Drain | per LLM-token / compute-sekund | per fetch, off-chain via `X-Peck-Receipt`; on-chain drain kun for dispute/commit |
+| Parter | user / gateway | client / server |
+
+Alt annet likt: dual-sig drain (ANYONECANPAY_SINGLE), FIX-A `close(clientSig, fee)`/`timeout(clientSig, fee)` med fee fra verdi, P2PKH-split, **samme sighash-oppskrift (§2)**. Kontrakt+artifact+test bor nå i `src/contracts/FetchPaymentChannel.ts` (9/9 jest grønt). Consumere (overlay paywall, peck.fm) bør importere herfra — re-point er oppfølger.
+
 ## 3. Non-custodial-prinsippet (hard regel)
 
 > Walleten produserer KUN brukerens signatur over en sighash. Gatewayen bygger transaksjonen, co-signer sin halvdel, signerer sin egen fee-input, og broadcaster. **Ingen privatnøkkel krysser grensen i noen retning.**

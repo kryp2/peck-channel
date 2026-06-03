@@ -13,7 +13,8 @@
     "close-e2e": "ts-node settle-sidecar/e2e-gopath-close.ts",
     "lifecycle-e2e": "ts-node settle-sidecar/e2e-gopath-lifecycle.ts",
     "meter-settle-e2e": "ts-node settle-sidecar/e2e-meter-settle.ts",
-    "timeout-e2e": "ts-node settle-sidecar/e2e-timeout.ts"
+    "timeout-e2e": "ts-node settle-sidecar/e2e-timeout.ts",
+    "vectors": "ts-node vectors/generate-vectors.ts"
   },
   "dependencies": {
     "@bsv/sdk": "^2.0.2",

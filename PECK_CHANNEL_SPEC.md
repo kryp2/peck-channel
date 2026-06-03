@@ -1,6 +1,19 @@
-# peck.channel — spec & grensesnitt (v0)
+# peck.channel — spec & grensesnitt (v1)
 
-_Skrevet 2026-06-02. Seam-først-runde. Dette er protokollen begge språk (TS-klient + Go-gateway) MÅ ære. Kilde-verifisert mot `src/contracts/LLMPaymentChannel.ts`, `settle-sidecar/*`, `peck-host/billing/*` og `peck-host/api/channels.go`._
+_v0 skrevet 2026-06-02, låst til v1 2026-06-03. Dette er protokollen begge språk (TS-klient + Go-gateway) MÅ ære. Kanon-kontrakt: **`LLMPaymentChannel`** (bevist on-chain — IKKE FetchPaymentChannel). Kilde-verifisert mot `src/contracts/LLMPaymentChannel.ts`, `src/client/*`, `settle-sidecar/*`, `peck-host/billing/*` og `peck-host/api/channels.go`._
+
+## 0a. Standarden er bevist — golden vektorer + alle ops on-chain
+
+**TS↔Go-enighet er bevist ved kontrakt**, ikke flaks: `vectors/sighash-vectors.json` er den språknøytrale fasiten (drain/close/timeout-sighashes). `tests/conformance.test.ts` (TS) og `peck-host/billing/conformance_test.go` (Go) asserter mot SAMME fil. Regenerér med `npm run vectors`. `sighashToSign` = naturlig BIP143-digest `hash256(preimage)`; TS: `sha256sha256(getPreimage)`, Go: `ReverseBytes(GetInputSignatureHash)`.
+
+**Alle 4 kontrakt-ops bevist non-custodial på mainnet (2026-06-02/03):**
+| Op | txid |
+|---|---|
+| drain | `569ddd1b` · `822a773c` |
+| close (amountSpent=0) | `4980815075` |
+| full lifecycle (drain→close, amountSpent>0) | `43dd688a` |
+| meter-driven settlement | `aa3ee1e5` |
+| timeout (gateway-uavhengig) | `6d5b83ab` |
 
 ## 0. Hva peck.channel er (og ikke er)
 

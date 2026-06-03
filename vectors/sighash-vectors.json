@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "description": "peck.channel golden sighash vectors. sighashToSign = NATURAL BIP143 digest hash256(preimage) the user + gateway sign. TS: sha256sha256(getPreimage). Go: ReverseBytes(GetInputSignatureHash). A P2PKH stands in for the contract scriptCode (isolates the sighash algorithm).",
+  "cases": [
+    {
+      "name": "drain-acp-single",
+      "method": "drain",
+      "prevTxid": "1111111111111111111111111111111111111111111111111111111111111111",
+      "vout": 0,
+      "subscriptHex": "76a914000000000000000000000000000000000000000088ac",
+      "inputValue": 2500,
+      "inputIndex": 0,
+      "sequence": 4294967295,
+      "nLockTime": 0,
+      "flag": 195,
+      "outputs": [
+        {
+          "scriptHex": "76a914000000000000000000000000000000000000000088ac",
+          "value": 2500
+        }
+      ],
+      "sighashToSign": "8ef13f3486c664909fe969f69008b225e42c5ce006bacb1356587a5168b50ca1"
+    },
+    {
+      "name": "close-all-split",
+      "method": "close",
+      "prevTxid": "1111111111111111111111111111111111111111111111111111111111111111",
+      "vout": 0,
+      "subscriptHex": "76a914000000000000000000000000000000000000000088ac",
+      "inputValue": 2500,
+      "inputIndex": 0,
+      "sequence": 4294967295,
+      "nLockTime": 0,
+      "flag": 65,
+      "outputs": [
+        {
+          "scriptHex": "76a914aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa88ac",
+          "value": 200
+        },
+        {
+          "scriptHex": "76a914aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa88ac",
+          "value": 1800
+        }
+      ],
+      "sighashToSign": "8c0b186ef0ed1e036f9184581c9779c50e5307f0d68fc04f621239974a74c511"
+    },
+    {
+      "name": "timeout-all-locktime",
+      "method": "timeout",
+      "prevTxid": "1111111111111111111111111111111111111111111111111111111111111111",
+      "vout": 0,
+      "subscriptHex": "76a914000000000000000000000000000000000000000088ac",
+      "inputValue": 2500,
+      "inputIndex": 0,
+      "sequence": 4294967294,
+      "nLockTime": 1700000000,
+      "flag": 65,
+      "outputs": [
+        {
+          "scriptHex": "76a914aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa88ac",
+          "value": 1800
+        }
+      ],
+      "sighashToSign": "4efd70f6d2647557ce18583454c2a45de9ee407e2721007a62e13eb233f1cc26"
+    }
+  ]
+}

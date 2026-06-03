@@ -4,6 +4,18 @@
   "description": "Canonical BSV payment-channel primitive — sCrypt contract + non-custodial client lib + spec. Consumers: peck.run, llm.peck.to, peck.fm.",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "license": "MIT",
+  "files": [
+    "src",
+    "artifacts/contracts/LLMPaymentChannel.json",
+    "artifacts/contracts/FetchPaymentChannel.json",
+    "vectors/sighash-vectors.json",
+    "PECK_CHANNEL_SPEC.md",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "npx scrypt-cli compile",
     "test": "npx jest",

@@ -1,5 +1,9 @@
 # peck-channel
 
+[![npm version](https://img.shields.io/npm/v/peck-channel.svg)](https://www.npmjs.com/package/peck-channel)
+[![Tests](https://github.com/kryp2/peck-channel/actions/workflows/test.yml/badge.svg)](https://github.com/kryp2/peck-channel/actions/workflows/test.yml)
+[![License](https://img.shields.io/badge/license-Open%20BSV-blue.svg)](LICENSE)
+
 _Repo, dir and package are all `peck-channel` (renamed from `llm-payment-channel` 2026-06-03)._
 
 The **canonical BSV payment-channel primitive** for the peck ecosystem: an sCrypt

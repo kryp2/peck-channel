@@ -1,6 +1,6 @@
 # peck-channel
 
-_(repo/dir still named `llm-payment-channel` — package is `peck-channel`)_
+_Repo, dir and package are all `peck-channel` (renamed from `llm-payment-channel` 2026-06-03)._
 
 The **canonical BSV payment-channel primitive** for the peck ecosystem: an sCrypt
 **lock-and-drain payment channel** contract + a **non-custodial client library** +

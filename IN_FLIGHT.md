@@ -1,5 +1,10 @@
-# IN_FLIGHT — llm-payment-channel
-_Sist oppdatert: 2026-06-01_
+# IN_FLIGHT — peck-channel _(renamet fra llm-payment-channel 2026-06-03)_
+_Sist oppdatert: 2026-06-03_
+
+## 2026-06-03 — primitivet FERDIGSTILT (standard låst + eget hjem)
+- Golden vektorer (`vectors/sighash-vectors.json`) + TS/Go-conformance (`tests/conformance.test.ts` + `peck-host/billing/conformance_test.go`) → TS↔Go-sighash-enighet bevist VED KONTRAKT. Spec → v1.
+- Repo+mappe+pakke renamet `llm-payment-channel → peck-channel` (GitHub `kryp2/peck-channel`). Funksjonell sti fikset (conformance_test.go). Gjenstår kun: ~21 historiske doc-mentions i andre repoer (kosmetisk) + peck-atlas/peck-tui registry-navn (re-syncbart).
+- Kanon-kontrakt = LLMPaymentChannel (bevist), IKKE FetchPaymentChannel. Konvergens av duplikatene (llm-gateway/overlay/fm) er separat fremtidig steg.
 
 ## Sist gjort
 - **FIX A BEVIST ON-CHAIN (mainnet).** Hele løkka: (1) deploy via BRC-100-wallet `createAction` → tx `d36a9071`; (2) close bygget av gateway (kontrakt-input + `[user]`, fee fra verdi, ingen change) + broadcast via GorillaPool ARC → tx `dfc39a8a`, `SEEN_ON_NETWORK`. close() sin SIGHASH_ALL-assert passerte live.

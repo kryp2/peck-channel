@@ -120,3 +120,15 @@ Relevant canonical paths:
 - `/home/thomas/Documents/peck-to/peck-host/billing/drain.go` (production gateway, spec-conformant)
 - `/home/thomas/Documents/peck-to/peck-api/internal/payment/channel.go:22` (stale embedded hex — highest-risk duplicate)
 - `/home/thomas/Documents/peck-to/peck-contracts/src/contracts/` (stale LLM + Fetch mirrors)
+
+---
+
+## UTFØRELSES-STATUS (2026-06-03)
+
+- **Steg 1 ✅** peck-contracts: stale pre-FIX-A LLMPaymentChannel + FetchPaymentChannel fjernet (kilde+exports+dist). Ingen importerte dem (overlay bruker pakka kun for BIO). Pushet.
+- **Steg 2 ✅** peck-fm: byttet til kanon FIX-A FetchPaymentChannel-artifact (fra overlay). peck-fm bygger script fra artifact via scryptlib + in-mem kanaler → trygt. (peck-fm ikke eget git-repo; endret på disk.)
+- **Steg 3 ✅** peck-api: hardkodet pre-FIX-A hex markert DEPRECATED → peker på peck-channel + peck-host/billing. peck-api er ubrukt stub (peck-web bruker kun social/feed). Pushet.
+- **Steg 4 ⏸ STØRRE ENN ANTATT** — peck-host bruker `libsv/go-bt`, llm-gateway bruker offisiell `bsv-blockchain/go-sdk`. To ulike BSV-libs → å forene til én delt Go-pakke er en ekte refactor (velg én lib, skriv om den andre), IKKE et quick import. Fortjener fokusert økt. Down-payment-mulighet: golden-vektor conformance-test i llm-gateway (go-sdk) som beviser at den tredje sighash-stien matcher standarden — bounded + trygt.
+- **Steg 5 ⏸** re-home FetchPaymentChannel→peck-channel: gjenstår (peck-overlay-schema kanon i dag).
+
+**Konvergens-gevinst så langt:** silent-divergence-risikoen er borte (stale kopier fjernet/deprecated, aktive consumere på kanon-artifact). Gjenstående er den arkitektoniske Go-lib-unifiseringen (steg 4) + Fetch-re-home (steg 5).

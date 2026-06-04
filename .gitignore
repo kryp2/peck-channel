@@ -7,3 +7,10 @@ artifacts/
 !jest.config.js
 .worktrees/
 settle-sidecar/spike-*.ts
+
+# internal working files — not for public repo
+IN_FLIGHT.md
+CLAUDE.md
+CONVERGENCE_PLAN.md
+RUNBOOK*.md
+.gemini/

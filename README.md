@@ -49,109 +49,109 @@ await gw.submitDrain(ch.channelTxid, drainTx.toString()) // gateway fee-signs + 
 ```
 
 `settle-sidecar/e2e-gopath-drain.ts` drives exactly this and doubles as the on-chain
-conformance test (`npm run drain-e2e`; see [`settle-sidecar/RUNBOOK_DRAIN_E2E.md`](./settle-sidecar/RUNBOOK_DRAIN_E2E.md)).
+conformance test (`npm run drain-e2e`).
 
 ---
 
-## Kontrakt (sCrypt)
+## Contract (sCrypt)
 
-## Arkitektur
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                       Klient                            │
+│                       Client                            │
 │  (peck-desktop, opencode, peck-web, etc.)               │
 └────────────────────────┬────────────────────────────────┘
                          │
               1. Deploy LLMPaymentChannel
-              2. Sett channel_id (TXID) i X-Channel-ID header
+              2. Set channel_id (TXID) in X-Channel-ID header
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
 │                  LLM Gateway (Go)                       │
-│  internal/middleware/auth.go  → validerer X-Channel-ID  │
-│  internal/payment/pricer.go   → kalkoulerer kost/sat    │
-│  internal/payment/channel.go  → [MÅ IMPLEMENTERES] drain│
+│  internal/middleware/auth.go  → validates X-Channel-ID  │
+│  internal/payment/pricer.go   → computes cost/sat       │
+│  internal/payment/channel.go  → [MUST IMPLEMENT] drain  │
 └────────────────────────┬────────────────────────────────┘
                          │
-              3. Kall drain() etter LLM-respons
+              3. Call drain() after LLM response
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│                BSV-blockkjeden (sCrypt)                 │
+│                BSV blockchain (sCrypt)                  │
 │  LLMPaymentChannel.ts — stateful UTXO                   │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Kontraktens livssyklus
+## Contract lifecycle
 
 ```
-[ÅPEN]     User deployer kontrakt med lockAmount satoshi
+[OPEN]     User deploys contract with lockAmount satoshi
               │
               ├─→ drain(amount, nonce, userSig, gatewaySig)
-              │      Trekker amountSpent, nonce++ (replay-beskyttelse)
-              │      UTXO-verdien forblir lockAmount
-              │      (Kan kalles mange ganger)
+              │      Increases amountSpent, nonce++ (replay protection)
+              │      UTXO value stays lockAmount
+              │      (Can be called many times)
               │
               ├─→ close(userSig)
-              │      Gateway får: amountSpent
-              │      User får:    lockAmount − amountSpent
+              │      Gateway gets: amountSpent
+              │      User gets:    lockAmount − amountSpent
               │
-              └─→ timeout(userSig)   [kun etter expiryTime]
-                     User får: hele lockAmount tilbake
+              └─→ timeout(userSig)   [only after expiryTime]
+                     User gets: the entire lockAmount back
 ```
 
-## Kontrakt-feltene
+## Contract fields
 
-| Felt | Type | Stateful | Beskrivelse |
+| Field | Type | Stateful | Description |
 |------|------|----------|-------------|
-| `userPubKey` | PubKey | nei | Brukeren som finansierer kanalen |
-| `gatewayPubKey` | PubKey | nei | LLM Gateway-operatøren |
-| `lockAmount` | bigint | nei | Total beløp låst (satoshi) |
-| `amountSpent` | bigint | **ja** | Akkumulert spent (oppdateres per drain) |
-| `paymentNonce` | bigint | **ja** | Replay-beskyttelse (inkrementeres per drain) |
-| `expiryTime` | bigint | nei | Unix-tidsstempel for kanalutløp |
+| `userPubKey` | PubKey | no | The user who funds the channel |
+| `gatewayPubKey` | PubKey | no | The LLM Gateway operator |
+| `lockAmount` | bigint | no | Total amount locked (satoshi) |
+| `amountSpent` | bigint | **yes** | Accumulated spend (updated per drain) |
+| `paymentNonce` | bigint | **yes** | Replay protection (incremented per drain) |
+| `expiryTime` | bigint | no | Unix timestamp for channel expiry |
 
-## Prosjektstruktur
+## Project structure
 
 ```
 peck-channel/
 ├── src/contracts/
-│   └── LLMPaymentChannel.ts    ← Smart contract (FERDIG)
+│   └── LLMPaymentChannel.ts    ← Smart contract (done)
 ├── tests/
-│   └── LLMPaymentChannel.test.ts ← Jest testsuite (10 tester)
+│   └── LLMPaymentChannel.test.ts ← Jest test suite (10 tests)
 ├── artifacts/contracts/
-│   └── LLMPaymentChannel.json  ← Kompilert artifact (auto-generert)
-├── deploy.ts                   ← Deploy-script (CLI)
+│   └── LLMPaymentChannel.json  ← Compiled artifact (auto-generated)
+├── deploy.ts                   ← Deploy script (CLI)
 ├── jest.config.js
 ├── package.json
 └── tsconfig.json
 ```
 
-## Kom i gang
+## Getting started
 
-### 1. Installer avhengigheter
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 2. Kompiler kontrakten
+### 2. Compile the contract
 
 ```bash
 npm run build
 # → artifacts/contracts/LLMPaymentChannel.json
 ```
 
-### 3. Kjør tester
+### 3. Run the tests
 
 ```bash
 npx jest --forceExit
 ```
 
-> **Merk:** scrypt-ts tar lang tid å initialisere i noen miljøer. Tester kan ta 30–60 sek.
+> **Note:** scrypt-ts takes a long time to initialize in some environments. Tests may take 30–60 sec.
 
-### 4. Deploy en betalingskanal
+### 4. Deploy a payment channel
 
 ```bash
 ts-node deploy.ts \
@@ -161,7 +161,7 @@ ts-node deploy.ts \
   [expirySeconds]
 ```
 
-Eksempel:
+Example:
 ```bash
 ts-node deploy.ts \
   "L1xxxxxx..." \
@@ -182,36 +182,36 @@ Output (JSON):
 }
 ```
 
-## Integrasjon med LLM Gateway
+## Integration with the LLM Gateway
 
-Kanalens `channelId` (TXID) sendes som `X-Channel-ID`-header til gatewayen:
+The channel's `channelId` (TXID) is sent as the `X-Channel-ID` header to the gateway:
 
 ```bash
 curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-Channel-ID: abc123txid..." \
-  -d '{"model":"auto","messages":[{"role":"user","content":"Hei!"}]}'
+  -d '{"model":"auto","messages":[{"role":"user","content":"Hi!"}]}'
 ```
 
-### Hva som allerede er klart i gatewayen
+### What is already in place in the gateway
 
-| Gateway-kode | Status | Beskrivelse |
+| Gateway code | Status | Description |
 |---|---|---|
-| `middleware/auth.go` | ✅ Skjelett | Leser `X-Channel-ID`, TODO: validering on-chain |
-| `payment/pricer.go` | ✅ Ferdig | Kalkulerer kost i satoshi fra token-bruk |
-| `payment/channel.go` | ❌ Mangler | Selve `drain()`-kallet fra Go → BSV |
+| `middleware/auth.go` | ✅ Skeleton | Reads `X-Channel-ID`, TODO: on-chain validation |
+| `payment/pricer.go` | ✅ Done | Computes cost in satoshi from token usage |
+| `payment/channel.go` | ❌ Missing | The actual `drain()` call from Go → BSV |
 
-### Neste steg for gateway-integrasjonen
+### Next steps for the gateway integration
 
-Gateway-en trenger en `internal/payment/channel.go` som:
+The gateway needs an `internal/payment/channel.go` that:
 
-1. **Verifiserer kanalen** — sjekk at TXID er on-chain og har nok saldo
-2. **Kaller `drain()`** — signerer transaksjonen og sender den
-3. **Sporer nonce** — lagrer siste nonce i lokal DB for å unngå replay
-4. **Fallback** — avvis forespørsel dersom drain feiler
+1. **Verifies the channel** — checks that the TXID is on-chain and has enough balance
+2. **Calls `drain()`** — signs the transaction and broadcasts it
+3. **Tracks the nonce** — stores the latest nonce in a local DB to avoid replay
+4. **Fallback** — rejects the request if the drain fails
 
 ```go
-// Pseudo-Go — hva som trengs i gateway
+// Pseudo-Go — what the gateway needs
 type Channel struct {
     TXID        string
     LockAmount  int64
@@ -220,46 +220,46 @@ type Channel struct {
 }
 
 func (c *ChannelManager) Drain(channelID string, satoshi int64) error {
-    // 1. Hent kanal fra DB / BSV node
-    // 2. Bygg drain() TX med begge signaturer
+    // 1. Fetch channel from DB / BSV node
+    // 2. Build drain() TX with both signatures
     // 3. Broadcast TX
-    // 4. Oppdater lokal nonce + amountSpent
+    // 4. Update local nonce + amountSpent
 }
 ```
 
-## Replay-beskyttelse
+## Replay protection
 
-Hvert `drain()`-kall krever at `nonce` matcher kontraktens `paymentNonce`. Etter drain inkrementeres nonce på-kjede. Dette sikrer at gamle drain-transaksjoner ikke kan gjenbrukes (replay attacks).
+Every `drain()` call requires that `nonce` matches the contract's `paymentNonce`. After a drain the nonce is incremented on-chain. This ensures old drain transactions cannot be reused (replay attacks).
 
 ```
-Drain #1: nonce=0 → etter: paymentNonce=1
-Drain #2: nonce=1 → etter: paymentNonce=2
-Forsøk på replay av Drain #1: nonce=0 → AVVIST
+Drain #1: nonce=0 → after: paymentNonce=1
+Drain #2: nonce=1 → after: paymentNonce=2
+Attempt to replay Drain #1: nonce=0 → REJECTED
 ```
 
-## Sikkerhetshensyn
+## Security considerations
 
 > [!WARNING]
-> **Begge parter må signere `drain()`** — gatewayen kan ikke tømme kanalen uten brukerens godkjenning. Brukersignaturen bør skje i klientens wallet (peck-desktop/bsv-desktop) for å unngå at gatewayen noen gang ser private keys.
+> **Both parties must sign `drain()`** — the gateway cannot drain the channel without the user's approval. The user signature should happen in the client's wallet (peck-desktop/bsv-desktop) so the gateway never sees private keys.
 
 > [!IMPORTANT]
-> **Timeout** er brukerens sikkerhetsventil. Dersom gatewayen slutter å svare, kan brukeren alltid hente tilbake pengene etter `expiryTime`.
+> **Timeout** is the user's safety valve. If the gateway stops responding, the user can always reclaim the funds after `expiryTime`.
 
 > [!NOTE]
-> **Minste lockAmount** bør være stor nok til å dekke flere kall. Anbefalt: minst 10 000 sat (≈ noen cents) for å unngå hyppig redeployment.
+> **Minimum lockAmount** should be large enough to cover several calls. Recommended: at least 10,000 sat (≈ a few cents) to avoid frequent redeployment.
 
-## Avhengigheter
+## Dependencies
 
-| Pakke | Versjon | Bruk |
+| Package | Version | Use |
 |---|---|---|
-| `scrypt-ts` | ^1.4.5 | sCrypt TypeScript-rammeverk |
-| `@bsv/sdk` | ^2.0.2 | BSV SDK (TX-bygging, signing) |
-| `@bsv/wallet-helper` | ^0.0.5 | Wallet-hjelpere |
-| `jest` + `ts-jest` | ^29.x | Testkjøring |
+| `scrypt-ts` | ^1.4.5 | sCrypt TypeScript framework |
+| `@bsv/sdk` | ^2.0.2 | BSV SDK (TX building, signing) |
+| `@bsv/wallet-helper` | ^0.0.5 | Wallet helpers |
+| `jest` + `ts-jest` | ^29.x | Test runner |
 
-## Referanser
+## References
 
-- **Eksisterende kontrakt-mønster:** `../contracts/src/contracts/Connect4.ts`
-- **Deploy-mønster:** `../contracts/deploy_contract.ts`
+- **Existing contract pattern:** `../contracts/src/contracts/Connect4.ts`
+- **Deploy pattern:** `../contracts/deploy_contract.ts`
 - **Gateway:** `../llm-gateway/`
-- **sCrypt-dokumentasjon:** https://docs.scrypt.io
+- **sCrypt documentation:** https://docs.scrypt.io

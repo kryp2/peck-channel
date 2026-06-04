@@ -37,7 +37,7 @@ implementations honour.
   non-custodial prepare/finalize close endpoints, cosign-drain, and the
   `e2e-gopath-drain.ts` driver doubling as the on-chain conformance test
   (`npm run drain-e2e`).
-- Project README, `PECK_CHANNEL_SPEC.md`, `CONVERGENCE_PLAN.md` and `IN_FLIGHT.md`.
+- Project README and `PECK_CHANNEL_SPEC.md`.
 - OSS packaging: published as the public npm package `peck-channel`, Open BSV
   License, GitHub Actions CI (`test.yml`), README badges and repo metadata.
 

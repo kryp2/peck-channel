@@ -7,3 +7,13 @@ artifacts/
 !jest.config.js
 .worktrees/
 settle-sidecar/spike-*.ts
+
+# --- interne agent-/dev-filer: aldri i git (matcher bevokt repo_leak) ---
+CLAUDE.md
+IN_FLIGHT.md
+ORCHESTRATION.md
+RUNBOOK*.md
+CONVERGENCE*.md
+*.privat.md
+.gemini/
+.geminirules

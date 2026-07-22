@@ -24,6 +24,7 @@
   "scripts": {
     "build": "npx scrypt-cli compile",
     "test": "npx jest",
+    "verify:sighash": "node scripts/verify-sighash-pinning.cjs",
     "deploy": "ts-node deploy.ts",
     "settle": "ts-node settle-sidecar/server.ts",
     "drain-e2e": "ts-node settle-sidecar/e2e-gopath-drain.ts",

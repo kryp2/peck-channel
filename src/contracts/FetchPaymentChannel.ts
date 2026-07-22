@@ -7,6 +7,8 @@ import {
     assert,
     hash256,
     hash160,
+    len,
+    slice,
     SigHash,
     ByteString,
     Utils,
@@ -106,6 +108,15 @@ export class FetchPaymentChannel extends SmartContract {
         clientSig: Sig,
         serverSig: Sig,
     ) {
+        // Chronicle/OTDA sighash-pinning (defense-in-depth mot 0x20-flagget):
+        // en spender kan ellers velge OTDA-digest per signatur og fôre et
+        // preimage UTEN satoshi-verdi/hashOutputs-feltene. Krev ekte BIP143:
+        // nVersion==1 og nHashType==0xc3 (EKSAKT likhet, aldri bit-test).
+        const preimage: ByteString = this.ctx.serialize()
+        const plen: bigint = len(preimage)
+        assert(slice(preimage, 0n, 4n) == toByteString('01000000'), 'bad nVersion')
+        assert(slice(preimage, plen - 4n, plen) == toByteString('c3000000'), 'bad nHashType')
+
         assert(
             this.checkSig(clientSig, this.clientPubKey),
             'Invalid client signature',
@@ -162,6 +173,13 @@ export class FetchPaymentChannel extends SmartContract {
      */
     @method()
     public close(clientSig: Sig, fee: bigint) {
+        // Chronicle/OTDA sighash-pinning (defense-in-depth mot 0x20-flagget).
+        // close signerer med SigHash.ALL → nHashType==0x41.
+        const preimage: ByteString = this.ctx.serialize()
+        const plen: bigint = len(preimage)
+        assert(slice(preimage, 0n, 4n) == toByteString('01000000'), 'bad nVersion')
+        assert(slice(preimage, plen - 4n, plen) == toByteString('41000000'), 'bad nHashType')
+
         assert(
             this.checkSig(clientSig, this.clientPubKey),
             'Invalid client signature',
@@ -203,6 +221,13 @@ export class FetchPaymentChannel extends SmartContract {
      */
     @method()
     public timeout(clientSig: Sig, fee: bigint) {
+        // Chronicle/OTDA sighash-pinning (defense-in-depth mot 0x20-flagget).
+        // timeout signerer med SigHash.ALL → nHashType==0x41.
+        const preimage: ByteString = this.ctx.serialize()
+        const plen: bigint = len(preimage)
+        assert(slice(preimage, 0n, 4n) == toByteString('01000000'), 'bad nVersion')
+        assert(slice(preimage, plen - 4n, plen) == toByteString('41000000'), 'bad nHashType')
+
         assert(
             this.checkSig(clientSig, this.clientPubKey),
             'Invalid client signature',

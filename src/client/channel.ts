@@ -179,6 +179,11 @@ export function buildDrainSpend(
     )
     .addOutput(new bsv.Transaction.Output({ script: gatewayP2PKH, satoshis: feeFund - drainFee }))
 
+  // Chronicle/OTDA sighash-pinning: the contract now asserts nVersion==1 (see
+  // LLMPaymentChannel.drain). Pin the spending-tx version explicitly so a bsv
+  // library default change can never silently produce a v2 tx the covenant rejects.
+  ;(drainTx as any).version = 1
+
   const preimageHex = getPreimage(drainTx, lockingScript, lockAmount, 0, ACP_SINGLE_FORKID)
   const sighash = bsv.crypto.Hash.sha256sha256(Buffer.from(preimageHex, 'hex'))
 
@@ -288,6 +293,8 @@ export function buildCloseSpend(
   }
 
   const closeTx = new bsv.Transaction().addInput(instance.buildContractInput())
+  // Chronicle/OTDA sighash-pinning: close() now asserts nVersion==1. Pin it.
+  ;(closeTx as any).version = 1
 
   // Contract order: gateway first (if >0), then user (if >0) — matches close()'s guards.
   if (gatewayAmount > 0) {
@@ -359,6 +366,8 @@ export function buildTimeoutSpend(channel: DeployedChannel, fee: number): Timeou
   // passes and the network enforces the timelock.
   timeoutTx.nLockTime = Number(expiry)
   timeoutTx.inputs[0].sequenceNumber = 0xfffffffe
+  // Chronicle/OTDA sighash-pinning: timeout() now asserts nVersion==1. Pin it.
+  ;(timeoutTx as any).version = 1
 
   const preimageHex = getPreimage(timeoutTx, lockingScript, lockAmount, 0, SIGHASH_ALL_FORKID)
   const sighash = bsv.crypto.Hash.sha256sha256(Buffer.from(preimageHex, 'hex'))

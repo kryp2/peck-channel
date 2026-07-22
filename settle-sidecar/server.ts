@@ -166,6 +166,8 @@ function buildCloseTx(req: ChannelReq, instance: LLMPaymentChannel): bsv.Transac
     if (userAmount < 0) throw new Error('fee exceeds user balance')
 
     const tx = new bsv.Transaction().addInput(instance.buildContractInput())
+    // Chronicle/OTDA sighash-pinning: close() asserts nVersion==1. Pin it.
+    ;(tx as any).version = 1
     if (gatewayAmount > 0) {
         tx.addOutput(
             new bsv.Transaction.Output({
@@ -202,6 +204,8 @@ function buildTimeoutTx(req: ChannelReq, instance: LLMPaymentChannel): bsv.Trans
     // non-final or nLockTime is ignored.
     tx.lockUntilDate(new Date((req.expiryTime + 1) * 1000))
     tx.inputs[0].sequenceNumber = 0xfffffffe
+    // Chronicle/OTDA sighash-pinning: timeout() asserts nVersion==1. Pin it.
+    ;(tx as any).version = 1
     return tx
 }
 
@@ -429,6 +433,7 @@ async function buildCloseDev(req: ChannelReq): Promise<string> {
         'close',
         async (current: LLMPaymentChannel): Promise<ContractTransaction> => {
             const tx = new bsv.Transaction().addInput(current.buildContractInput())
+            ;(tx as any).version = 1 // Chronicle/OTDA sighash-pinning: close() asserts nVersion==1
             if (gatewayAmount > 0) {
                 tx.addOutput(
                     new bsv.Transaction.Output({
@@ -478,6 +483,7 @@ async function buildTimeoutDev(req: ChannelReq): Promise<string> {
                 )
             tx.lockUntilDate(new Date((req.expiryTime + 1) * 1000))
             tx.inputs[0].sequenceNumber = 0xfffffffe
+            ;(tx as any).version = 1 // Chronicle/OTDA sighash-pinning: timeout() asserts nVersion==1
             return { tx, atInputIndex: 0, nexts: [] }
         }
     )

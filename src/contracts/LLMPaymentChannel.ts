@@ -7,6 +7,8 @@ import {
     assert,
     hash256,
     hash160,
+    len,
+    slice,
     SigHash,
     ByteString,
     Utils,
@@ -85,6 +87,15 @@ export class LLMPaymentChannel extends SmartContract {
      */
     @method(SigHash.ANYONECANPAY_SINGLE)
     public drain(amount: bigint, nonce: bigint, userSig: Sig, gatewaySig: Sig) {
+        // Chronicle/OTDA sighash-pinning (defense-in-depth mot 0x20-flagget):
+        // en spender kan ellers velge OTDA-digest per signatur og fôre et
+        // preimage UTEN satoshi-verdi/hashOutputs-feltene. Krev ekte BIP143:
+        // nVersion==1 og nHashType==0xc3 (EKSAKT likhet, aldri bit-test).
+        const preimage: ByteString = this.ctx.serialize()
+        const plen: bigint = len(preimage)
+        assert(slice(preimage, 0n, 4n) == toByteString('01000000'), 'bad nVersion')
+        assert(slice(preimage, plen - 4n, plen) == toByteString('c3000000'), 'bad nHashType')
+
         // Verify both signatures
         assert(this.checkSig(userSig, this.userPubKey), 'Invalid user signature')
         assert(
@@ -119,6 +130,13 @@ export class LLMPaymentChannel extends SmartContract {
      */
     @method()
     public close(userSig: Sig, fee: bigint) {
+        // Chronicle/OTDA sighash-pinning (defense-in-depth mot 0x20-flagget).
+        // close signerer med SigHash.ALL → nHashType==0x41.
+        const preimage: ByteString = this.ctx.serialize()
+        const plen: bigint = len(preimage)
+        assert(slice(preimage, 0n, 4n) == toByteString('01000000'), 'bad nVersion')
+        assert(slice(preimage, plen - 4n, plen) == toByteString('41000000'), 'bad nHashType')
+
         assert(this.checkSig(userSig, this.userPubKey), 'Invalid user signature')
         assert(fee >= 0n, 'fee must be non-negative')
 
@@ -162,6 +180,13 @@ export class LLMPaymentChannel extends SmartContract {
      */
     @method()
     public timeout(userSig: Sig, fee: bigint) {
+        // Chronicle/OTDA sighash-pinning (defense-in-depth mot 0x20-flagget).
+        // timeout signerer med SigHash.ALL → nHashType==0x41.
+        const preimage: ByteString = this.ctx.serialize()
+        const plen: bigint = len(preimage)
+        assert(slice(preimage, 0n, 4n) == toByteString('01000000'), 'bad nVersion')
+        assert(slice(preimage, plen - 4n, plen) == toByteString('41000000'), 'bad nHashType')
+
         assert(this.checkSig(userSig, this.userPubKey), 'Invalid user signature')
 
         // Enforce expiry via nLockTime

@@ -21,3 +21,5 @@ jobs:
         run: npm run build
       - name: Test (jest — contracts, conformance, derive)
         run: npx jest --forceExit
+      - name: Verify Chronicle/OTDA sighash-pinning (nVersion + nHashType)
+        run: node scripts/verify-sighash-pinning.cjs

@@ -14,3 +14,11 @@ CLAUDE.md
 CONVERGENCE_PLAN.md
 RUNBOOK*.md
 .gemini/
+
+# --- interne agent-/dev-filer: aldri i git (public repo) ---
+AGENTS.md
+ORCHESTRATION.md
+CONVERGENCE*.md
+*.privat.md
+.geminirules
+.claude/

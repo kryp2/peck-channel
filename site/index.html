@@ -202,17 +202,15 @@ user sig = wallet.createSignature({
         </div>
 
         <div class="block">
-          <h3><span class="st st-off">off</span> And why</h3>
+          <h3><span class="st st-off">off</span> In production</h3>
           <ul>
-            <li><b>peck.run:</b> since 28 September 2026 the channel routes answer 503 in production. The gateway does not yet check on-chain that a channel it is asked to open is really funded (the spec lists this as a TODO). Until it does, accepting channels would mean serving on credit that may not exist. They come back when that check does.</li>
-            <li><b>llm.peck.to:</b> the per-request receipt tier is built into the gateway and switched off. Wiring it to the live path is the remaining integration.</li>
+            <li><b>peck.run</b> and <b>llm.peck.to</b> do not accept payment channels yet. They will be switched on one service at a time, and this page will say when.</li>
           </ul>
         </div>
 
         <div class="block">
           <h3><span class="st st-plan">open</span> Not done yet</h3>
           <ul>
-            <li>The gateway helper in the client library still sends the old login (the caller's public key as a bearer token), which peck.run no longer accepts. It needs the challenge login, and the example drivers in <code>settle-sidecar/</code> with it.</li>
             <li>The Go code that implements the spec lives in peck-host, and llm-gateway has a parallel copy. Merging them onto one shared core is open.</li>
             <li>The npm package ships TypeScript source, not a compiled build.</li>
           </ul>

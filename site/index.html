@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>peck.channel — payment channels for Peck</title>
+  <meta name="description" content="The primitive for paying per second or per call between a wallet and a service, settled on BSV and non-custodial. Spec v1, contract, library and test vectors.">
+  <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1118" media="(prefers-color-scheme: dark)">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap top-in">
+      <a class="wordmark" href="./" aria-label="peck.channel">peck<span class="dot" aria-hidden="true"></span>channel</a>
+      <nav aria-label="Sections">
+        <a href="#how">How it works</a>
+        <a href="#who">Who uses it</a>
+        <a href="#status">Status</a>
+        <a href="#find">Spec</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="h1">
+      <p class="eyebrow"><span class="tag tag-accent">spec v1</span> <span class="tag">contract + library</span> <span class="tag tag-amber">not an app, not a host</span></p>
+      <h1 id="h1">Pay per second, per call, <span class="hl">from your own wallet.</span></h1>
+      <p class="lead">peck.channel is the primitive for paying per second or per call between a wallet and a service, settled on BSV and never in anyone else's custody.</p>
+      <p class="lead">It is a spec, a smart contract and a client library that other Peck services build on. It does not host anything and it is not a payments product.</p>
+      <p class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/kryp2/peck-channel/blob/main/PECK_CHANNEL_SPEC.md">Read the spec</a>
+        <a class="btn" href="https://github.com/kryp2/peck-channel/blob/main/vectors/sighash-vectors.json">Test vectors</a>
+        <a class="btn" href="https://www.npmjs.com/package/peck-channel">npm: peck-channel</a>
+      </p>
+      <p class="oneline"><b>Status in one line:</b> the contract and the library are proven on mainnet; channels are switched off on peck.run and llm.peck.to for now. <a href="#status">Details below.</a></p>
+    </section>
+
+    <section id="how" class="wrap" aria-labelledby="how-h">
+      <h2 id="how-h"><span class="hash" aria-hidden="true">##</span> How it works, at a glance</h2>
+      <ol class="flow">
+        <li>
+          <h3>Open</h3>
+          <p>The wallet locks an amount in one transaction. The coins sit in a contract output. The service cannot move them on its own signature.</p>
+          <span class="where"><span class="on">on-chain</span> · one transaction</span>
+        </li>
+        <li>
+          <h3>Use</h3>
+          <p>The service meters per second or per call. Each new running total is authorised by the user's wallet as a signed message with the amount and a higher nonce. An old total cannot be replayed, and the total can never pass what was locked.</p>
+          <span class="where">signed running totals · checkpoints on-chain when needed</span>
+        </li>
+        <li>
+          <h3>Settle</h3>
+          <p>Close: the service receives what was spent and the user gets the rest back. Or, after the expiry, the user alone takes the locked amount back with a timeout, with no service involved.</p>
+          <span class="where"><span class="on">on-chain</span> · one transaction</span>
+        </li>
+      </ol>
+
+      <div class="cards" aria-label="Guarantees">
+        <article class="card">
+          <h3>Non-custodial</h3>
+          <p>The wallet only ever signs a hash for the user's half. The service builds the transaction, signs its own half and broadcasts. No private key crosses the boundary.</p>
+        </article>
+        <article class="card">
+          <h3>Two keys to drain</h3>
+          <p>Moving the spend forward needs the user's signature and the service's. The service cannot drain a channel alone.</p>
+        </article>
+        <article class="card">
+          <h3>Always a way out</h3>
+          <p>After the expiry the user can reclaim the locked amount, less the miner fee, straight from the network. The channel can never lock funds permanently.</p>
+        </article>
+        <article class="card">
+          <h3>Bounded and replay-safe</h3>
+          <p>Spend is capped by the locked amount. The nonce goes up with every step, so an old signed total is worthless.</p>
+        </article>
+      </div>
+
+      <h3 class="sub">Two contracts, one recipe</h3>
+      <div class="table-wrap stackable">
+        <table>
+          <thead><tr><th scope="col"></th><th scope="col">LLMPaymentChannel</th><th scope="col">FetchPaymentChannel</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">What for</th><td data-label="LLMPaymentChannel">Per LLM token or per compute-second. The canonical contract.</td><td data-label="FetchPaymentChannel">Per fetch. Receipts travel off-chain in an <code>X-Peck-Receipt</code> header.</td></tr>
+            <tr><th scope="row">Expiry</th><td data-label="LLMPaymentChannel">Unix time</td><td data-label="FetchPaymentChannel">Block height</td></tr>
+            <tr><th scope="row">Nonce</th><td data-label="LLMPaymentChannel">Must match, plus one per drain</td><td data-label="FetchPaymentChannel">Strictly increasing</td></tr>
+            <tr><th scope="row">Mainnet proofs below</th><td data-label="LLMPaymentChannel">Yes, all four operations</td><td data-label="FetchPaymentChannel">Contract and tests are in the repo. The proofs below are for the other contract.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="spec" class="wrap" aria-labelledby="spec-h">
+      <h2 id="spec-h"><span class="hash" aria-hidden="true">##</span> The spec in four boxes</h2>
+      <p class="sec-lead">The full text is <a href="https://github.com/kryp2/peck-channel/blob/main/PECK_CHANNEL_SPEC.md">PECK_CHANNEL_SPEC.md</a>. This is the part you need to see whether it fits.</p>
+
+      <details open>
+        <summary>Contract fields and methods (LLMPaymentChannel)</summary>
+        <div class="body">
+          <div class="table-wrap stackable">
+            <table>
+              <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Meaning</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">userPubKey</th><td data-label="Type">PubKey</td><td data-label="Meaning">The user who funds the channel (a BRC-42 child key)</td></tr>
+                <tr><th scope="row">gatewayPubKey</th><td data-label="Type">PubKey</td><td data-label="Meaning">The service operator. Must match its co-signing key</td></tr>
+                <tr><th scope="row">lockAmount</th><td data-label="Type">bigint</td><td data-label="Meaning">Total locked, in satoshis. The output value stays constant across drains</td></tr>
+                <tr><th scope="row">amountSpent</th><td data-label="Type">bigint, state</td><td data-label="Meaning">Running total spent, advanced by each drain</td></tr>
+                <tr><th scope="row">paymentNonce</th><td data-label="Type">bigint, state</td><td data-label="Meaning">Replay protection, incremented by each drain</td></tr>
+                <tr><th scope="row">expiryTime</th><td data-label="Type">bigint</td><td data-label="Meaning">Unix time after which the user may time out</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note"><code>drain(amount, nonce, userSig, gatewaySig)</code> needs both signatures and moves the spend forward. <code>close(userSig)</code> pays the service what was spent and the user the rest, less the miner fee. <code>timeout(userSig)</code> works only after the expiry and returns the locked amount to the user, less the miner fee.</p>
+        </div>
+      </details>
+
+      <details open>
+        <summary>What the wallet signs</summary>
+        <div class="body">
+          <pre>drain:   ANYONECANPAY | SINGLE | FORKID
+close:   ALL | FORKID
+timeout: ALL | FORKID, nLockTime = expiry
+
+sighash = sha256sha256(BIP143 preimage,
+                       input 0)
+
+user sig = wallet.createSignature({
+  hashToDirectlySign: sighash,
+  protocolID: [2, 'peck channel'],
+  keyID, counterparty: 'self' })</pre>
+          <p class="note">The drain flags bind only the contract input and the new state output, so the service can pay the miner fee from a separate input without changing the channel value. A <code>createAction</code> from the wallet would add its own funding input and change output and break that binding, which is why the service builds the transaction and the wallet only signs.</p>
+        </div>
+      </details>
+
+      <details open>
+        <summary>The gateway HTTP contract</summary>
+        <div class="body">
+          <div class="table-wrap stackable">
+            <table>
+              <thead><tr><th scope="col">Route</th><th scope="col">Does</th></tr></thead>
+              <tbody>
+                <tr><th scope="row" class="nowrap">POST /channels/open</th><td>Registers a channel the user has funded.</td></tr>
+                <tr><th scope="row" class="nowrap">POST /channels/drain</th><td>The gateway builds the drain spend and returns its co-signature, the sighash, the amount and the nonce.</td></tr>
+                <tr><th scope="row" class="nowrap">POST /channels/cosign-drain</th><td>The client posts the sighash it rebuilt; the gateway co-signs that.</td></tr>
+                <tr><th scope="row" class="nowrap">POST /channels/submit-drain</th><td>The client posts the finished drain. The gateway verifies it, signs its fee input and broadcasts.</td></tr>
+                <tr><th scope="row" class="nowrap">POST /channels/close</th><td>The gateway returns the authoritative amount spent; the client builds the close and the user signs it.</td></tr>
+                <tr><th scope="row" class="nowrap">POST /channels/submit-close</th><td>The client posts the finished close. The gateway checks the split and broadcasts.</td></tr>
+                <tr><th scope="row" class="nowrap">no route</th><td>Timeout. After the expiry the user broadcasts the reclaim straight to the network. No gateway is involved.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note">Broadcast goes through ARC. The reference implementation of these routes is peck-host (peck.run).</p>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Rules that must not break</summary>
+        <div class="body">
+          <p>Sighash parity: the Go and the TypeScript sides must compute byte-identical digests, checked against the golden vectors. Both signatures are required to drain. Timeout is always the user's way out, so a channel can never lock funds permanently. Any change to how the sighash is built has to keep the parity check green.</p>
+        </div>
+      </details>
+    </section>
+
+    <section id="who" class="wrap" aria-labelledby="who-h">
+      <h2 id="who-h"><span class="hash" aria-hidden="true">##</span> Who uses it</h2>
+      <div class="table-wrap stackable">
+        <table>
+          <thead><tr><th scope="col">Consumer</th><th scope="col">Uses it for</th><th scope="col">Status</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">peck.run</th><td data-label="For">Reference gateway (peck-host). Compute metered per second.</td><td data-label="Status"><span class="st st-off">off in production</span></td></tr>
+            <tr><th scope="row">llm.peck.to</th><td data-label="For">Per-request signed receipts for LLM calls.</td><td data-label="Status"><span class="st st-off">built in, switched off</span></td></tr>
+            <tr><th scope="row">Peck nodes</th><td data-label="For">Paid use of someone else's node (phase 2).</td><td data-label="Status"><span class="st st-plan">not built</span></td></tr>
+            <tr><th scope="row">peck.fm</th><td data-label="For">Paywalled streams, with the per-fetch contract.</td><td data-label="Status"><span class="st st-plan">planned</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="status" class="wrap" aria-labelledby="status-h">
+      <h2 id="status-h"><span class="hash" aria-hidden="true">##</span> Status, told straight</h2>
+      <div class="status-grid">
+
+        <div class="block">
+          <h3><span class="st st-ok">proven</span> On BSV mainnet, 2 to 3 June 2026</h3>
+          <p class="sec-lead">Every operation of LLMPaymentChannel was executed on mainnet through the library, non-custodially: the wallet signed only the user's sighash. These show that the mechanism works. They are not a record of production use.</p>
+          <div class="table-wrap stackable">
+            <table>
+              <thead><tr><th scope="col">Operation</th><th scope="col">Transaction</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Deploy, then drain through the Go gateway path</th><td data-label="Tx"><a class="mono" href="https://whatsonchain.com/tx/97fd93be85fbf4df120e1ceac31e53bdb262541d3299b00fd8681a5e059e7293">97fd93be…e7293</a> then <a class="mono" href="https://whatsonchain.com/tx/569ddd1b0cc6d9124c9d751c92769c656cd57382124a99c14965047a9190423f">569ddd1b…0423f</a></td></tr>
+                <tr><th scope="row">Drain through the client library</th><td data-label="Tx"><span class="mono">822a773c</span></td></tr>
+                <tr><th scope="row">Close, nothing spent</th><td data-label="Tx"><span class="mono">4980815075</span></td></tr>
+                <tr><th scope="row">Full lifecycle: drain, then close with spend above zero</th><td data-label="Tx"><span class="mono">43dd688a</span></td></tr>
+                <tr><th scope="row">Settlement driven by a live per-second meter</th><td data-label="Tx"><span class="mono">aa3ee1e5</span></td></tr>
+                <tr><th scope="row">Timeout, reclaimed without any gateway</th><td data-label="Tx"><span class="mono">6d5b83ab</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="fine">The first two are linked in full. The others are listed by their first characters, as in the spec.</p>
+        </div>
+
+        <div class="block">
+          <h3><span class="st st-off">off</span> In production</h3>
+          <ul>
+            <li><b>peck.run</b> and <b>llm.peck.to</b> do not accept payment channels yet. They will be switched on one service at a time, and this page will say when.</li>
+          </ul>
+        </div>
+
+        <div class="block">
+          <h3><span class="st st-plan">open</span> Not done yet</h3>
+          <ul>
+            <li>The Go code that implements the spec lives in peck-host, and llm-gateway has a parallel copy. Merging them onto one shared core is open.</li>
+            <li>The npm package ships TypeScript source, not a compiled build.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="find" class="wrap" aria-labelledby="find-h">
+      <h2 id="find-h"><span class="hash" aria-hidden="true">##</span> Where the spec and the test vectors live</h2>
+      <ul class="links">
+        <li><a href="https://github.com/kryp2/peck-channel/blob/main/PECK_CHANNEL_SPEC.md">PECK_CHANNEL_SPEC.md</a><span>The spec, v1. Contract ABI, sighash recipe, gateway routes, invariants.</span></li>
+        <li><a href="https://github.com/kryp2/peck-channel/blob/main/vectors/sighash-vectors.json">vectors/sighash-vectors.json</a><span>Golden vectors for the drain, close and timeout sighashes. Language-neutral.</span></li>
+        <li><a href="https://github.com/kryp2/peck-channel/blob/main/tests/conformance.test.ts">tests/conformance.test.ts</a><span>The TypeScript side asserting against those vectors.</span></li>
+        <li><a href="https://github.com/kryp2/peck-channel/blob/main/src/contracts/LLMPaymentChannel.ts">src/contracts/</a><span>Both sCrypt contracts, with tests.</span></li>
+        <li><a href="https://github.com/kryp2/peck-channel/tree/main/src/client">src/client/</a><span>The wallet-side client library.</span></li>
+        <li><a href="https://github.com/kryp2/peck-channel/tree/main/settle-sidecar">settle-sidecar/</a><span>End-to-end drivers that ran the mainnet proofs.</span></li>
+        <li><a href="https://www.npmjs.com/package/peck-channel">npm: peck-channel</a><span>Version 0.1.1, Open BSV License v5.</span></li>
+        <li><a href="https://github.com/kryp2/peck-channel">github.com/kryp2/peck-channel</a><span>Source, changelog and issues.</span></li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <p>© 2026 Datamynt AS. No cookies, no scripts, no trackers, no third-party fonts or requests.</p>
+  </footer>
+</body>
+</html>

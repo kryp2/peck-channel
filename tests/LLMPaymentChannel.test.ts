@@ -105,7 +105,12 @@ describe('LLMPaymentChannel', () => {
             }
         )
     }
-    function bindTimeout(deployed: LLMPaymentChannel, fee: bigint, lockTime: number): void {
+    function bindTimeout(
+        deployed: LLMPaymentChannel,
+        fee: bigint,
+        lockTime: number,
+        sequence = 0xfffffffe
+    ): void {
         deployed.bindTxBuilder(
             'timeout',
             async (current: LLMPaymentChannel): Promise<ContractTransaction> => {
@@ -113,7 +118,7 @@ describe('LLMPaymentChannel', () => {
                 const tx = new bsv.Transaction().addInput(current.buildContractInput())
                 tx.addOutput(new bsv.Transaction.Output({ script: p2pkhOf(userPrivKey), satoshis: userAmount }))
                 tx.fee(Number(fee))
-                tx.inputs[0].sequenceNumber = 0xfffffffe
+                tx.inputs[0].sequenceNumber = sequence
                 tx.nLockTime = lockTime
                 return { tx, atInputIndex: 0, nexts: [] }
             }
@@ -370,6 +375,31 @@ describe('LLMPaymentChannel', () => {
                     {
                         pubKeyOrAddrToSign: [userPrivKey.publicKey],
                         lockTime: nowLock, // current time, before expiry
+                        autoPayFee: false,
+                    } as MethodCallOptions<LLMPaymentChannel>
+                )
+            ).rejects.toThrow()
+        })
+
+        it('should reject timeout when every input sequence is final (nLockTime would not be enforced by the network)', async () => {
+            const futureExpiry = BigInt(Math.floor(Date.now() / 1000) + 86400)
+            const lockAmount = 10000n
+            const instance = createInstance(lockAmount, futureExpiry)
+
+            const deployed = await deployInstance(instance, Number(lockAmount))
+            // nLockTime satisfies the contract's >= check, but with nSequence
+            // 0xffffffff the tx is final and miners accept it immediately.
+            const lockTime = Number(futureExpiry) + 1
+            bindTimeout(deployed, FEE, lockTime, 0xffffffff)
+
+            await expect(
+                deployed.methods.timeout(
+                    (sigResps: SignatureResponse[]) =>
+                        findSig(sigResps, userPrivKey.publicKey),
+                    FEE,
+                    {
+                        pubKeyOrAddrToSign: [userPrivKey.publicKey],
+                        lockTime,
                         autoPayFee: false,
                     } as MethodCallOptions<LLMPaymentChannel>
                 )

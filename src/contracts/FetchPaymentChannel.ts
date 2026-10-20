@@ -108,10 +108,10 @@ export class FetchPaymentChannel extends SmartContract {
         clientSig: Sig,
         serverSig: Sig,
     ) {
-        // Chronicle/OTDA sighash-pinning (defense-in-depth mot 0x20-flagget):
-        // en spender kan ellers velge OTDA-digest per signatur og fôre et
-        // preimage UTEN satoshi-verdi/hashOutputs-feltene. Krev ekte BIP143:
-        // nVersion==1 og nHashType==0xc3 (EKSAKT likhet, aldri bit-test).
+        // Chronicle/OTDA sighash-pinning (defense-in-depth against the 0x20 flag):
+        // a spender could otherwise pick the OTDA digest per signature and feed a
+        // preimage WITHOUT the satoshi-value/hashOutputs fields. Require genuine
+        // BIP143: nVersion==1 and nHashType==0xc3 (EXACT equality, never a bit test).
         const preimage: ByteString = this.ctx.serialize()
         const plen: bigint = len(preimage)
         assert(slice(preimage, 0n, 4n) == toByteString('01000000'), 'bad nVersion')
@@ -173,8 +173,8 @@ export class FetchPaymentChannel extends SmartContract {
      */
     @method()
     public close(clientSig: Sig, fee: bigint) {
-        // Chronicle/OTDA sighash-pinning (defense-in-depth mot 0x20-flagget).
-        // close signerer med SigHash.ALL → nHashType==0x41.
+        // Chronicle/OTDA sighash-pinning (defense-in-depth against the 0x20 flag).
+        // close signs with SigHash.ALL → nHashType==0x41.
         const preimage: ByteString = this.ctx.serialize()
         const plen: bigint = len(preimage)
         assert(slice(preimage, 0n, 4n) == toByteString('01000000'), 'bad nVersion')
@@ -221,8 +221,8 @@ export class FetchPaymentChannel extends SmartContract {
      */
     @method()
     public timeout(clientSig: Sig, fee: bigint) {
-        // Chronicle/OTDA sighash-pinning (defense-in-depth mot 0x20-flagget).
-        // timeout signerer med SigHash.ALL → nHashType==0x41.
+        // Chronicle/OTDA sighash-pinning (defense-in-depth against the 0x20 flag).
+        // timeout signs with SigHash.ALL → nHashType==0x41.
         const preimage: ByteString = this.ctx.serialize()
         const plen: bigint = len(preimage)
         assert(slice(preimage, 0n, 4n) == toByteString('01000000'), 'bad nVersion')

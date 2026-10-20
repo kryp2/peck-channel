@@ -189,8 +189,11 @@ export class LLMPaymentChannel extends SmartContract {
 
         assert(this.checkSig(userSig, this.userPubKey), 'Invalid user signature')
 
-        // Enforce expiry via nLockTime
-        assert(this.ctx.locktime >= this.expiryTime, 'Channel not yet expired')
+        // Enforce expiry via nLockTime. timeLock() also requires nSequence < 0xffffffff
+        // (a tx whose inputs are all final ignores nLockTime, so a bare
+        // `locktime >= expiryTime` check would let the user refund at once) and keeps
+        // the height/timestamp unit of nLockTime consistent with expiryTime.
+        assert(this.timeLock(this.expiryTime), 'Channel not yet expired')
         assert(fee >= 0n, 'fee must be non-negative')
 
         // Full refund to user, minus the close fee taken from channel value

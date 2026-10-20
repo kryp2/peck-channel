@@ -43,7 +43,7 @@ Go cannot import the sCrypt lib — that is why (3) and (4) are separate. The gl
 **Methods:**
 - `drain(amount, nonce, userSig, gatewaySig)` — requires BOTH sigs over the same sighash. `amountSpent ← amount`, `paymentNonce ← nonce+1`, the UTXO value stays `lockAmount`. Can be called many times.
 - `close(userSig)` — split: gateway gets `amountSpent`, user gets `lockAmount − amountSpent`. SIGHASH_ALL.
-- `timeout(userSig)` — only after `expiryTime`: user gets the entire `lockAmount` back (nLockTime). The user's safety valve.
+- `timeout(userSig)` — only after `expiryTime`: user gets the entire `lockAmount` back (nLockTime). The user's safety valve. Enforced with sCrypt `timeLock(expiryTime)`: `nLockTime >= expiryTime` AND the contract input's `nSequence < 0xffffffff` (an all-final tx ignores `nLockTime`), and for `FetchPaymentChannel` `nLockTime` must be a block height (< 500,000,000). Builders must set `nSequence = 0xfffffffe`.
 
 ## 2. Sighash construction (drain) — the canonical recipe
 

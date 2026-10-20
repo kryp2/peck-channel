@@ -233,10 +233,11 @@ export class FetchPaymentChannel extends SmartContract {
             'Invalid client signature',
         )
 
-        assert(
-            this.ctx.locktime >= this.expiryHeight,
-            'Channel not yet expired',
-        )
+        // timeLock() requires nSequence < 0xffffffff (all-final inputs ignore nLockTime)
+        // and, because expiryHeight < 500_000_000, that nLockTime is itself a block
+        // height: a unix-timestamp nLockTime would otherwise satisfy `>=` while being
+        // long in the past.
+        assert(this.timeLock(this.expiryHeight), 'Channel not yet expired')
         assert(fee >= 0n, 'fee must be non-negative')
 
         // Full refund to client, minus the miner fee taken from the

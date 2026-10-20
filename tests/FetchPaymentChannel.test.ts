@@ -130,7 +130,8 @@ describe('FetchPaymentChannel', () => {
     function bindTimeout(
         deployed: FetchPaymentChannel,
         fee: bigint,
-        lockTime: number
+        lockTime: number,
+        sequence = 0xfffffffe
     ): void {
         deployed.bindTxBuilder(
             'timeout',
@@ -148,7 +149,7 @@ describe('FetchPaymentChannel', () => {
                     })
                 )
                 tx.fee(Number(fee))
-                tx.inputs[0].sequenceNumber = 0xfffffffe
+                tx.inputs[0].sequenceNumber = sequence
                 tx.nLockTime = lockTime
                 return { tx, atInputIndex: 0, nexts: [] }
             }
@@ -377,6 +378,55 @@ describe('FetchPaymentChannel', () => {
 
             const deployed = await deployInstance(instance, Number(lockAmount))
             const lockTime = Number(expiryHeight) - 100 // before expiry
+            bindTimeout(deployed, FEE, lockTime)
+
+            await expect(
+                deployed.methods.timeout(
+                    (sigResps: SignatureResponse[]) =>
+                        findSig(sigResps, clientPrivKey.publicKey),
+                    FEE,
+                    {
+                        pubKeyOrAddrToSign: [clientPrivKey.publicKey],
+                        lockTime,
+                        autoPayFee: false,
+                    } as MethodCallOptions<FetchPaymentChannel>
+                )
+            ).rejects.toThrow()
+        })
+
+        it('should reject timeout when every input sequence is final (nLockTime would not be enforced by the network)', async () => {
+            const expiryHeight = 800000n
+            const lockAmount = 10000n
+            const instance = createInstance(lockAmount, expiryHeight)
+
+            const deployed = await deployInstance(instance, Number(lockAmount))
+            const lockTime = Number(expiryHeight) + 1
+            bindTimeout(deployed, FEE, lockTime, 0xffffffff)
+
+            await expect(
+                deployed.methods.timeout(
+                    (sigResps: SignatureResponse[]) =>
+                        findSig(sigResps, clientPrivKey.publicKey),
+                    FEE,
+                    {
+                        pubKeyOrAddrToSign: [clientPrivKey.publicKey],
+                        lockTime,
+                        autoPayFee: false,
+                    } as MethodCallOptions<FetchPaymentChannel>
+                )
+            ).rejects.toThrow()
+        })
+
+        it('should reject a block-height expiry satisfied by a timestamp nLockTime', async () => {
+            // expiryHeight is a block height. A unix-timestamp nLockTime (>= 500_000_000)
+            // passes a plain `locktime >= expiryHeight` check but is long in the past,
+            // so the network would accept the refund at once.
+            const expiryHeight = 800000n
+            const lockAmount = 10000n
+            const instance = createInstance(lockAmount, expiryHeight)
+
+            const deployed = await deployInstance(instance, Number(lockAmount))
+            const lockTime = 500_000_000
             bindTimeout(deployed, FEE, lockTime)
 
             await expect(

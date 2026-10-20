@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `timeout()` (both `LLMPaymentChannel` and `FetchPaymentChannel`) now enforces the
+  timelock with `timeLock()`: the spending input must have `nSequence < 0xffffffff`
+  (a transaction with only final inputs ignores `nLockTime`, so the old
+  `ctx.locktime >= expiry` check let the payer refund at once), and for
+  `FetchPaymentChannel` `nLockTime` must be a block height like `expiryHeight` (a
+  unix-timestamp `nLockTime` satisfied `>= expiryHeight` while already being in the
+  past). This changes the script: channels deployed with earlier artifacts keep the
+  old behaviour; new deployments must use artifacts rebuilt from this source.
+
 ## [0.1.1] - 2026-06-03
 
 First published release of the canonical BSV payment-channel primitive for the
